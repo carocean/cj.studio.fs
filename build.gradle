@@ -1,0 +1,87 @@
+plugins {
+    id 'java'
+}
+
+group 'cj.studio.fs'
+version '1.0.0'
+
+
+subprojects {
+    apply plugin: 'java'
+    apply plugin: 'eclipse'
+    apply plugin: 'maven'
+    version = engineer_version
+    sourceCompatibility = 1.8
+    targetCompatibility = 1.8
+    repositories {
+        jcenter()
+        mavenCentral()
+        maven {
+            url engineer_nexus
+        }
+    }
+
+    dependencies {
+        testCompile 'junit:junit:4.8.2'
+        // https://mvnrepository.com/artifact/io.netty/netty-all
+        compile group: 'io.netty', name: 'netty-all', version: '5.0.0.Alpha2'
+    }
+
+    jar {
+        manifest.attributes provider: 'cj crops'
+    }
+
+    tasks.withType(JavaCompile) {
+        options.encoding = "UTF-8"
+    }
+    tasks.withType(Javadoc) {
+        options.addStringOption('Xdoclint:none', '-quiet')
+        options.addStringOption('encoding', 'UTF-8')
+        options.addStringOption('charSet', 'UTF-8')
+    }
+    task javadocJar(type: Jar, dependsOn: javadoc) {
+        classifier = 'javadoc'
+        from javadoc.destinationDir
+    }
+    task sourcesJar(type: Jar, dependsOn: classes) {
+        classifier = 'sources'
+        from sourceSets.main.allSource
+    }
+    artifacts {
+        archives jar
+        archives javadocJar
+        archives sourcesJar
+    }
+
+    uploadArchives {
+        repositories {
+            mavenDeployer {
+                pom.groupId = project.group
+                pom.version = project.version
+                pom.artifactId = project.name
+                pom.project {
+                    name project.name
+                    packaging 'jar'
+                    description ''
+                    licenses {
+                        license {
+                            name 'The Apache Software License, Version 2.0'
+                            url 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                            distribution ''
+                        }
+                    }
+                    developers {
+                        developer {
+                            id 'cj'
+                            name 'Carocean Jofers'
+                        }
+                    }
+                }
+
+                repository(url: engineer_nexus) {
+                    authentication(userName: "deployment", password: "deployment123")
+                }
+            }
+        }
+    }
+}

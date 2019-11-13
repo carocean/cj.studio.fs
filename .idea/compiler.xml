@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="CompilerConfiguration">
+    <bytecodeTargetLevel>
+      <module name="cj.studio.fs.cj.studio.fs.gateway.main" target="1.8" />
+      <module name="cj.studio.fs.cj.studio.fs.gateway.test" target="1.8" />
+      <module name="cj.studio.fs.cj.studio.fs.netdisk.main" target="1.8" />
+      <module name="cj.studio.fs.cj.studio.fs.netdisk.test" target="1.8" />
+      <module name="cj.studio.fs.cj.studio.fs.writer.main" target="1.8" />
+      <module name="cj.studio.fs.cj.studio.fs.writer.test" target="1.8" />
+    </bytecodeTargetLevel>
+  </component>
+</project>
