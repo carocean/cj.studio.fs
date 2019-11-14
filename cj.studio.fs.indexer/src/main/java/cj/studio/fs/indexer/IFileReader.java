@@ -9,4 +9,6 @@ public interface IFileReader {
 
     int read(byte[] buf, int pos, int length) throws IOException;
     void close() throws IOException;
+
+    long length() throws IOException;
 }

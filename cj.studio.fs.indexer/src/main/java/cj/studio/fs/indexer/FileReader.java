@@ -32,6 +32,11 @@ class FileReader implements IFileReader {
     }
 
     @Override
+    public long length() throws IOException {
+        return file.length();
+    }
+
+    @Override
     public int read(byte[] buf) throws IOException {
         return file.read(buf);
     }

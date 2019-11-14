@@ -63,7 +63,7 @@ public class FileSystem implements IDirectory {
         }
         Map<String, FileInfo> dir = db.getTreeMap(parent);
         List<String> list = new ArrayList<>();
-        if(dir==null)return list;
+        if (dir == null) return list;
         for (String key : dir.keySet()) {
             FileInfo info = dir.get(key);
             if (info.type == FileType.dir) {
@@ -119,7 +119,7 @@ public class FileSystem implements IDirectory {
             String fn = Utils.getFileName(file);
             FileInfo info = map.get(fn);
             String realFile = String.format("%s%s%s", dataDir.getAbsoluteFile(), File.separator, info.fileName);
-            File f=new File(realFile);
+            File f = new File(realFile);
             f.delete();
             map.remove(fn);
         }
@@ -143,7 +143,7 @@ public class FileSystem implements IDirectory {
         String fn = Utils.getFileName(file);
         FileInfo info = map.get(fn);
         String realFile = String.format("%s%s%s", dataDir.getAbsoluteFile(), File.separator, info.fileName);
-        File f=new File(realFile);
+        File f = new File(realFile);
         f.delete();
         map.remove(fn);
         db.commit();
@@ -157,9 +157,38 @@ public class FileSystem implements IDirectory {
         }
         return Utils.getParentDir(dir);
     }
-    public void close(){
+
+    public void close() {
         db.close();
     }
+
+    @Override
+    public boolean isDirectory(String path) {
+        if("/".equals(path)||"".equals(path)){
+            return true;
+        }
+        while (path.endsWith("/")){
+            path=path.substring(0,path.length()-1);
+        }
+        return db.getCollections().containsKey(path);
+    }
+
+    @Override
+    public boolean isFile(String path) {
+        String parentDir = Utils.getParentDir(path);
+        Map<String, FileInfo> dir = null;
+        if (!db.getCollections().containsKey(parentDir)) {
+            return false;
+        }
+        dir = db.getTreeMap(parentDir);
+
+        String fn = Utils.getFileName(path);
+        if (!dir.containsKey(fn)) {
+            return false;
+        }
+        return true;
+    }
+
     class DefaultSite implements IServiceProvider {
         @Override
         public Object getService(String name) {

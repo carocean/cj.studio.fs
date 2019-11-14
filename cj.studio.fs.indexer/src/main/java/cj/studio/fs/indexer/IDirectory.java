@@ -11,4 +11,8 @@ public interface IDirectory {
     void deleteFile(String file);
 
     String parentDir(String dir);
+
+    boolean isDirectory(String path);
+
+    boolean isFile(String path);
 }
