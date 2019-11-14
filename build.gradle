@@ -25,6 +25,10 @@ subprojects {
         testCompile 'junit:junit:4.8.2'
         // https://mvnrepository.com/artifact/io.netty/netty-all
         compile group: 'io.netty', name: 'netty-all', version: '5.0.0.Alpha2'
+        // https://mvnrepository.com/artifact/org.apache.jdbm/jdbm
+        compile group: 'org.apache.jdbm', name: 'jdbm', version: '3.0-alpha5'
+
+
     }
 
     jar {

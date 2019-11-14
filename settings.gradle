@@ -1,4 +1,5 @@
 rootProject.name = 'cj.studio.fs'
 include 'cj.studio.fs.gateway.reader'
 include 'cj.studio.fs.gateway.writer'
+include 'cj.studio.fs.indexer'
 

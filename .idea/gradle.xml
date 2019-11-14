@@ -12,6 +12,7 @@
             <option value="$PROJECT_DIR$" />
             <option value="$PROJECT_DIR$/cj.studio.fs.gateway.reader" />
             <option value="$PROJECT_DIR$/cj.studio.fs.gateway.writer" />
+            <option value="$PROJECT_DIR$/cj.studio.fs.indexer" />
           </set>
         </option>
         <option name="useAutoImport" value="true" />
