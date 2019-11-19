@@ -1,20 +1,22 @@
 package cj.studio.fs.gateway;
 
-import cj.studio.fs.indexer.FileSystem;
-import cj.studio.fs.indexer.IServerConfig;
-import cj.studio.fs.indexer.IServiceProvider;
-import cj.studio.fs.indexer.ServerConfig;
+import cj.studio.fs.indexer.*;
 import cj.studio.fs.indexer.util.Utils;
+import okhttp3.ConnectionPool;
+import okhttp3.OkHttpClient;
 import org.apache.commons.cli.*;
 import org.apache.log4j.PropertyConfigurator;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 
 public class Gateway implements IServiceProvider {
     IServerConfig config;
     private FileSystem fileSystem;
-
+    IAccessController controller;
+    IUCPorts iucPorts;
+    OkHttpClient okhttp;
 
     public Options getOptions() {
         Options options = new Options();
@@ -55,6 +57,18 @@ public class Gateway implements IServiceProvider {
     public void installServices(String yaml) throws IOException {
         config = ServerConfig.load(yaml);
         fileSystem = new FileSystem(config.dataDir());
+        ConnectionPool pool = new ConnectionPool(
+                config.uc_maxIdleConnections(),
+                config.uc_keepAliveDuration(),
+                TimeUnit.MILLISECONDS);
+        okhttp = new OkHttpClient.Builder().
+                connectionPool(pool).
+                readTimeout(config.uc_readTimeout(),TimeUnit.MILLISECONDS).
+                connectTimeout(config.uc_connectTimeout(),TimeUnit.MILLISECONDS).
+                writeTimeout(config.uc_writeTimeout(),TimeUnit.MILLISECONDS).
+                build();
+        iucPorts = new DefaultUCPorts(this);
+        controller = new DefaultAccessController(this);
     }
 
     @Override
@@ -62,8 +76,17 @@ public class Gateway implements IServiceProvider {
         if ("$.config".equals(name)) {
             return config;
         }
-        if("$.fileSystem".equals(name)){
+        if ("$.fileSystem".equals(name)) {
             return fileSystem;
+        }
+        if ("$.accessController".equals(name)) {
+            return controller;
+        }
+        if ("$.uc.ports".equals(name)) {
+            return iucPorts;
+        }
+        if ("$.okhttp".equals(name)) {
+            return okhttp;
         }
         return null;
     }

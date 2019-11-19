@@ -2,14 +2,20 @@ package cj.studio.fs.indexer.util;
 
 import cj.studio.fs.indexer.FileInfo;
 import cj.studio.fs.indexer.FileType;
+import io.netty.handler.codec.http.Cookie;
+import io.netty.handler.codec.http.FullHttpRequest;
+import io.netty.handler.codec.http.HttpHeaderNames;
+import io.netty.handler.codec.http.ServerCookieDecoder;
 import org.apache.jdbm.DB;
 
+import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 public class Utils {
     public static String getParentDir(String file) {
-        if(Utils.isEmpty(file)||"/".equals(file)){
+        if (Utils.isEmpty(file) || "/".equals(file)) {
             return "";
         }
         String parent = "";
@@ -43,7 +49,7 @@ public class Utils {
     public static void mkdirs(DB db, String dir) {
         String remaining = dir;
         String folder = "";
-        String parentDir="/";
+        String parentDir = "/";
         do {
             while ((remaining.startsWith("/"))) {
                 remaining = dir.substring(1, remaining.length());
@@ -51,30 +57,104 @@ public class Utils {
             int pos = remaining.indexOf("/");
             if (pos < 0) {
                 folder = remaining;
-                remaining="";
+                remaining = "";
             } else {
                 folder = remaining.substring(0, pos);
                 remaining = remaining.substring(pos + 1, remaining.length());
             }
-            parentDir=mkdir(db,parentDir,folder);
+            parentDir = mkdir(db, parentDir, folder);
         } while (!Utils.isEmpty(remaining));
     }
 
-    private synchronized static String mkdir(DB db, String parentDir,String folder) {
+    private synchronized static String mkdir(DB db, String parentDir, String folder) {
         Map<String, FileInfo> parent = null;
         if (!db.getCollections().containsKey(parentDir)) {
             parent = db.createTreeMap(parentDir);
         } else {
             parent = db.getTreeMap(parentDir);
         }
-        String dir=String.format("%s%s",parentDir.endsWith("/")?parentDir:String.format("%s/",parentDir),folder);
-        if(!db.getCollections().containsKey(dir)){
+        String dir = String.format("%s%s", parentDir.endsWith("/") ? parentDir : String.format("%s/", parentDir), folder);
+        if (!db.getCollections().containsKey(dir)) {
             db.createTreeMap(dir);
         }
-        if(!Utils.isEmpty(folder)) {
-            parent.put(folder, new FileInfo(FileType.dir, folder,System.currentTimeMillis()));
+        if (!Utils.isEmpty(folder)) {
+            parent.put(folder, new FileInfo(FileType.dir, folder, System.currentTimeMillis()));
         }
         db.commit();
         return dir;
+    }
+
+    public static Map<String, String> parseQueryString(String uri) {
+        int pos = uri.indexOf("?");
+        Map<String, String> params = new HashMap<>();
+        if (pos < 0) return params;
+        String qs = uri.substring(pos + 1, uri.length());
+        String kv = "";
+        String remain = qs;
+
+        while (true) {
+            pos = remain.indexOf("&");
+            if (pos < 0) {
+                kv = remain;
+                parseKV(kv, params);
+                break;
+            }
+            kv = remain.substring(0, pos);
+            parseKV(kv, params);
+            remain = remain.substring(pos + 1, remain.length());
+        }
+        return params;
+    }
+
+    private static void parseKV(String kv, Map<String, String> params) {
+        int pos = kv.indexOf("=");
+        if (pos < 0) return;
+        String k = kv.substring(0, pos);
+        if (isEmpty(k)) {
+            return;
+        }
+        String v = kv.substring(pos + 1, kv.length());
+        if (isEmpty(v)) {
+            v = "";
+        }
+        params.put(k, v);
+    }
+
+    public static String getToken(String uri) {
+        return parseQueryString(uri).get("Access-Token");
+    }
+
+    public static String getTokenFromCookie(FullHttpRequest request) {
+        String value = request.headers().getAndConvert(HttpHeaderNames.COOKIE);
+        if (Utils.isEmpty(value)) {
+            return "";
+        }
+        Set<Cookie> cookies = ServerCookieDecoder.decode(value);
+        for (Cookie cookie : cookies) {
+            if ("Access-Token".equals(cookie.name())) {
+                return cookie.value();
+            }
+        }
+        return "";
+    }
+
+    public static String getAppidFromCookie(FullHttpRequest request) {
+        String value = request.headers().getAndConvert(HttpHeaderNames.COOKIE);
+        if (Utils.isEmpty(value)) {
+            return "";
+        }
+        Set<Cookie> cookies = ServerCookieDecoder.decode(value);
+        for (Cookie cookie : cookies) {
+            if ("App-ID".equals(cookie.name())) {
+                return cookie.value();
+            }
+        }
+        return "";
+    }
+
+    public static String getPathWithoutQuerystring(String uri) {
+        int pos = uri.indexOf("?");
+        if(pos<0)return uri;
+        return uri.substring(0, pos);
     }
 }

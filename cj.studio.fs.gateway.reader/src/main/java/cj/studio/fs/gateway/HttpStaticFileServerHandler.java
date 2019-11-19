@@ -15,10 +15,7 @@
  */
 package cj.studio.fs.gateway;
 
-import cj.studio.fs.indexer.FileSystem;
-import cj.studio.fs.indexer.IFileReader;
-import cj.studio.fs.indexer.IServerConfig;
-import cj.studio.fs.indexer.IServiceProvider;
+import cj.studio.fs.indexer.*;
 import cj.studio.fs.indexer.util.Utils;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -91,10 +88,12 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
     public static final int HTTP_CACHE_SECONDS = 60;
     FileSystem fileSystem;
     IServerConfig config;
+    IAccessController controller;
 
     public HttpStaticFileServerHandler(IServiceProvider site) {
         this.config = (IServerConfig) site.getService("$.config");
         fileSystem = (FileSystem) site.getService("$.fileSystem");
+        controller = (IAccessController) site.getService("$.accessController");
     }
 
     @Override
@@ -110,13 +109,31 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
         }
 
         final String uri = request.uri();
-        final String path = uri;
+        final String path = Utils.getPathWithoutQuerystring(uri);
         if (path == null) {
             sendError(ctx, FORBIDDEN);
             return;
         }
+        Map<String, String> params = null;
+        String accessToken = "";
+        String appid = "";
+        if (config.rbacForceToken()) {
+            params = Utils.parseQueryString(uri);
+            accessToken = params.get("Access-Token");
+            if (Utils.isEmpty(accessToken)) {
+                accessToken = Utils.getTokenFromCookie(request);
+            }
+            appid = params.get("App-ID");
+            if (Utils.isEmpty(appid)) {
+                appid = Utils.getAppidFromCookie(request);
+            }
+        }
         if (fileSystem.isDirectory(path)) {
-            if (uri.endsWith("/")) {
+            if (config.rbacForceToken() && !controller.hasListRights(uri, appid, accessToken)) {
+                sendError(ctx, FORBIDDEN);
+                return;
+            }
+            if (path.endsWith("/")) {
                 sendListing(ctx, path);
             } else {
                 sendRedirect(ctx, uri + '/');
@@ -125,6 +142,10 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
         }
 
         if (!fileSystem.isFile(path)) {
+            sendError(ctx, FORBIDDEN);
+            return;
+        }
+        if (config.rbacForceToken() && !controller.hasReadRights(uri, appid, accessToken)) {
             sendError(ctx, FORBIDDEN);
             return;
         }

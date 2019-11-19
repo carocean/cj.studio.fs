@@ -165,6 +165,10 @@ public class FileSystem implements IDirectory {
 
     @Override
     public boolean isDirectory(String path) {
+        int pos=path.indexOf("?");
+        if(pos>-1){
+            path = path.substring(0, pos);
+        }
         if("/".equals(path)||"".equals(path)){
             return true;
         }

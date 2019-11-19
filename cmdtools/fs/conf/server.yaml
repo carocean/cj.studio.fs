@@ -1,3 +1,4 @@
+#部署架构：ngnix(1-n)->reader server(1-n)->nas
 #数据目录，如果以/开头则是绝对路径，否则视为在文件程序的根目录中找
 dataDir: /Users/caroceanjofers/Downloads/test/
 reader:
@@ -18,9 +19,14 @@ writer:
     chunkedSize: 8192
 #用户中心,客户端负载
 ucs:
+  maxIdleConnections: 10
+  keepAliveDuration: 30000
+  readTimeout: 30000
+  connectTimeout: 15000
+  writeTimeout: 30000
   addresses:
-    - https://localhost:8080/uc/
-    - https://localhost:8081/uc/
+    - http://47.105.165.186/uc/auth/
+    - http://47.105.165.186/uc/auth/
 rbac:
   #策略：固定目录，包括：
   # /public 完全开放，不需要令牌，一般授权为只读
@@ -28,15 +34,19 @@ rbac:
   # /self 仅自己才可访问，一般授权为读写。在myself下目录层级为：/用户/租户/应用/账号，如：http://localhost:8080/test/1.jpg?d=..表示1.jpg在应用目录的test目录下
   # /protected/users 用户目录,实现/用户/租户/应用/账号层级存储，
   strategy: default
+  #强制检查令牌，false表示是开放系统
+  forceToken: true
   # 格式：allow|deny user|role@users|roles read|write|list limit|unlimit self except xx@xx,yy@yy
   # acl一般用于对/public和/protect目录的访问权限，同样对于/self可以将其开放给他人。
   # 注意self限制将使分享的人无法打开分享者的图片,因为受其令牌的身份限制。因此平台暂不考虑self的实现
   acl:
-    - allow *@roles read /public unlimit token
+    - allow *@users read /lib unlimit token
     # 所有的用户共享读，这是危险的，但是由于不授权list权限，窃取者需要知道对方的文件名才可取出，因此多数被规避。
     # 但如果采用self就需要用自己的token生成一个分享token并给对方才可让对方读取，这使用起来太多不便。
     # 目前阿里云也仅仅是给第三方一个key，让第三方为资源生成令牌，在访问阿里云oss时也仅仅认证了是否是授信的第三方访问，
     # 如果是则第三方的应用可以访问所有第三方的资源，并没有为第三方的个人用户做资源保护。所以如果第四方想访问第三方肯定会被禁止，但在第三方内用户之间的文件没有私密
-    - allow *@users read /protected/users limit token
+    - deny *@users read /protected/users limit token
     - allow *@users write /protected/users limit token by self
-    - allow tenantAdministrators@ucroles read|write|list /movies/ limit token
+    - allow tenantDevelops@ucroles read / limit token
+    - allow tenantDevelops@ucroles write / limit token
+    - allow tenantDevelops@ucroles list / limit token
