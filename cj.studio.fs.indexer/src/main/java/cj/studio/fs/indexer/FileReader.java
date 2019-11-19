@@ -37,6 +37,11 @@ class FileReader implements IFileReader {
     }
 
     @Override
+    public void readFully(byte[] array, int pos, int chunkSize) throws IOException {
+        file.readFully(array,pos,chunkSize);
+    }
+
+    @Override
     public int read(byte[] buf) throws IOException {
         return file.read(buf);
     }

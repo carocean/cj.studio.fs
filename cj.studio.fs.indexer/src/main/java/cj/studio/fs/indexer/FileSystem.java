@@ -1,6 +1,7 @@
 package cj.studio.fs.indexer;
 
 import cj.studio.fs.indexer.util.Utils;
+import org.apache.commons.cli.Options;
 import org.apache.jdbm.DB;
 import org.apache.jdbm.DBMaker;
 
@@ -189,7 +190,20 @@ public class FileSystem implements IDirectory {
         return true;
     }
 
+    public long lastModified(String file) {
+        String parent = Utils.getParentDir(file);
+        if (!db.getCollections().containsKey(parent)) {
+            throw new RuntimeException("父路径不存在");
+        }
+        Map<String, FileInfo> map = db.getTreeMap(parent);
+        String fn = Utils.getFileName(file);
+        FileInfo info = map.get(fn);
+        return info.getLastModified();
+    }
+
     class DefaultSite implements IServiceProvider {
+
+
         @Override
         public Object getService(String name) {
             if ("$.db".equals(name)) {

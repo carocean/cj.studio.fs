@@ -6,14 +6,34 @@ import java.io.Serializable;
 public class FileInfo implements Serializable {
     FileType type;
     String fileName;//物理文件名，或目录名
-
+    long createtime;
+    long lastModified;
     public FileInfo() {
     }
 
-    public FileInfo(FileType type, String fileName) {
+    public FileInfo(FileType type, String fileName,long createtime) {
         this.type = type;
         this.fileName = fileName;
+        this.createtime=createtime;
+        this.lastModified=createtime;
     }
+
+    public long getLastModified() {
+        return lastModified;
+    }
+
+    public void setLastModified(long lastModified) {
+        this.lastModified = lastModified;
+    }
+
+    public long getCreatetime() {
+        return createtime;
+    }
+
+    public void setCreatetime(long createtime) {
+        this.createtime = createtime;
+    }
+
     public FileType getType() {
         return type;
     }

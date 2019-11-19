@@ -24,7 +24,7 @@ public class FileWriter implements IFileWriter {
 
         String fn = Utils.getFileName(file);
         if (!dir.containsKey(fn)) {
-            FileInfo info=new FileInfo(FileType.file,Utils.generalFileName(parentDir.hashCode()));
+            FileInfo info=new FileInfo(FileType.file,Utils.generalFileName(parentDir.hashCode()),System.currentTimeMillis());
             dir.put(fn,info);
             db.commit();
         }

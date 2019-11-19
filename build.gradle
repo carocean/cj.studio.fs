@@ -89,3 +89,14 @@ subprojects {
         }
     }
 }
+
+task release(type: Copy) {
+    doLast {
+        println 'fs 环境发布完毕!'
+    }
+}
+release.dependsOn ":cj.studio.fs.indexer:release"
+release.dependsOn ":cj.studio.fs.gateway.reader:release"
+release.dependsOn ":cj.studio.fs.gateway.writer:release"
+tasks.getByPath(':cj.studio.fs.gateway.reader:release').mustRunAfter tasks.getByPath(':cj.studio.fs.indexer:release')
+tasks.getByPath(':cj.studio.fs.gateway.writer:release').mustRunAfter tasks.getByPath(':cj.studio.fs.indexer:release')

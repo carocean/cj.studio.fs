@@ -11,4 +11,7 @@ public interface IFileReader {
     void close() throws IOException;
 
     long length() throws IOException;
+
+    void readFully(byte[] array, int arrayOffset, int chunkSize) throws IOException;
+
 }

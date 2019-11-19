@@ -15,20 +15,30 @@
  */
 package cj.studio.fs.gateway;
 
+import cj.studio.fs.indexer.IServerConfig;
+import cj.studio.fs.indexer.IServiceProvider;
 import io.netty.channel.ChannelInitializer;
 import io.netty.channel.ChannelPipeline;
 import io.netty.channel.socket.SocketChannel;
 import io.netty.handler.codec.http.HttpObjectAggregator;
 import io.netty.handler.codec.http.HttpServerCodec;
 import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.SslProvider;
+import io.netty.handler.ssl.util.SelfSignedCertificate;
 import io.netty.handler.stream.ChunkedWriteHandler;
+
+import javax.net.ssl.SSLException;
+import java.security.cert.CertificateException;
 
 public class HttpStaticFileServerInitializer extends ChannelInitializer<SocketChannel> {
 
     private final SslContext sslCtx;
+    private final IServiceProvider site;
 
-    public HttpStaticFileServerInitializer(SslContext sslCtx) {
-        this.sslCtx = sslCtx;
+
+    public HttpStaticFileServerInitializer(SslContext sslCtx, IServiceProvider site) throws CertificateException, SSLException {
+        this.site = site;
+        this.sslCtx=sslCtx;
     }
 
     @Override
@@ -40,6 +50,6 @@ public class HttpStaticFileServerInitializer extends ChannelInitializer<SocketCh
         pipeline.addLast(new HttpServerCodec());
         pipeline.addLast(new HttpObjectAggregator(65536));
         pipeline.addLast(new ChunkedWriteHandler());
-        pipeline.addLast(new HttpStaticFileServerHandler());
+        pipeline.addLast(new HttpStaticFileServerHandler(site));
     }
 }

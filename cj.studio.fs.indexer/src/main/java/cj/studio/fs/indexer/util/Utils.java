@@ -72,7 +72,7 @@ public class Utils {
             db.createTreeMap(dir);
         }
         if(!Utils.isEmpty(folder)) {
-            parent.put(folder, new FileInfo(FileType.dir, folder));
+            parent.put(folder, new FileInfo(FileType.dir, folder,System.currentTimeMillis()));
         }
         db.commit();
         return dir;

@@ -8,4 +8,13 @@ version '1.0.0'
 
 dependencies {
     testCompile group: 'junit', name: 'junit', version: '4.12'
+    compile('commons-cli:commons-cli:1.2')
+    compile group: 'org.yaml', name: 'snakeyaml', version: '1.25'
+}
+
+task release(type: Copy) {
+    dependsOn "build"
+    from 'build/libs/'
+    into '../outputs/'
+    include '**/*.jar'
 }
