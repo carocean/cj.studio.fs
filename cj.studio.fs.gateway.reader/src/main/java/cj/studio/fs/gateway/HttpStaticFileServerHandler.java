@@ -134,9 +134,15 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
                 return;
             }
             if (path.endsWith("/")) {
-                sendListing(ctx, path);
+                sendListing(ctx, path, appid, accessToken);
             } else {
-                sendRedirect(ctx, uri + '/');
+                String qs = Utils.getQuerystring(uri);
+                if (Utils.isEmpty(qs)) {
+                    sendRedirect(ctx, path + '/');
+                } else {
+                    sendRedirect(ctx, path + "/?" + qs);
+                }
+
             }
             return;
         }
@@ -214,7 +220,8 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
     }
 
 
-    private void sendListing(ChannelHandlerContext ctx, String dirPath) {
+    private void sendListing(ChannelHandlerContext ctx, String dirPath, String appid, String token) {
+        String qs = String.format("?App-ID=%s&Access-Token=%s", appid, token);
         FullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, OK);
         response.headers().set(CONTENT_TYPE, "text/html; charset=UTF-8");
 
@@ -230,19 +237,23 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
                 .append("</h3>\r\n")
 
                 .append("<ul>")
-                .append("<li><a href=\"../\">..</a></li>\r\n");
+                .append(String.format("<li  style='list-style: none;'><a style='text-decoration: none; ' href=\"../%s\">..</a></li>\r\n", qs));
 
         for (String name : fileSystem.listDir(dirPath)) {
-            buf.append("<li><a href=\"")
+            buf.append("<li style='list-style: none;'><a style='text-decoration: none; ' href=\"")
                     .append(name)
+                    .append(qs)
                     .append("\">")
+                    .append("+&nbsp;&nbsp;")
                     .append(name)
                     .append("</a></li>\r\n");
         }
         for (String name : fileSystem.listFile(dirPath)) {
-            buf.append("<li><a href=\"")
+            buf.append("<li  style='list-style: none;'><a style='text-decoration: none; ' href=\"")
                     .append(name)
+                    .append(qs)
                     .append("\">")
+                    .append("-&nbsp;&nbsp;")
                     .append(name)
                     .append("</a></li>\r\n");
         }

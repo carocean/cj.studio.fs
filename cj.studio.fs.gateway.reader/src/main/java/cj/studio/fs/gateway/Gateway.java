@@ -68,7 +68,7 @@ public class Gateway implements IServiceProvider {
                 writeTimeout(config.uc_writeTimeout(),TimeUnit.MILLISECONDS).
                 build();
         iucPorts = new DefaultUCPorts(this);
-        controller = new DefaultAccessController(this);
+        controller = new DefaultReadAccessController(this);
     }
 
     @Override

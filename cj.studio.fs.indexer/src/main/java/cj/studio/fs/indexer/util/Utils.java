@@ -157,4 +157,10 @@ public class Utils {
         if(pos<0)return uri;
         return uri.substring(0, pos);
     }
+
+    public static String getQuerystring(String uri) {
+        int pos=uri.indexOf("?");
+        if(pos<0)return "";
+        return uri.substring(pos + 1, uri.length());
+    }
 }
