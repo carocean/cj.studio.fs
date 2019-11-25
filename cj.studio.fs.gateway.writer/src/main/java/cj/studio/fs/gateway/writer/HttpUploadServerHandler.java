@@ -15,46 +15,37 @@
  */
 package cj.studio.fs.gateway.writer;
 
+import cj.studio.fs.indexer.FileSystem;
+import cj.studio.fs.indexer.IFileWriter;
 import cj.studio.fs.indexer.IServiceProvider;
 import cj.studio.fs.indexer.IUCPorts;
 import cj.studio.fs.indexer.util.Utils;
-import com.sun.org.apache.xalan.internal.xsltc.dom.CurrentNodeListFilter;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.Channel;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.*;
 import io.netty.handler.codec.http.*;
-import io.netty.handler.codec.http.multipart.Attribute;
-import io.netty.handler.codec.http.multipart.DefaultHttpDataFactory;
-import io.netty.handler.codec.http.multipart.DiskAttribute;
-import io.netty.handler.codec.http.multipart.DiskFileUpload;
-import io.netty.handler.codec.http.multipart.FileUpload;
-import io.netty.handler.codec.http.multipart.HttpDataFactory;
-import io.netty.handler.codec.http.multipart.HttpPostRequestDecoder;
+import io.netty.handler.codec.http.multipart.*;
 import io.netty.handler.codec.http.multipart.HttpPostRequestDecoder.EndOfDataDecoderException;
 import io.netty.handler.codec.http.multipart.HttpPostRequestDecoder.ErrorDataDecoderException;
-import io.netty.handler.codec.http.multipart.InterfaceHttpData;
 import io.netty.handler.codec.http.multipart.InterfaceHttpData.HttpDataType;
 import io.netty.util.CharsetUtil;
-import okhttp3.OkHttpClient;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.Charset;
 import java.util.*;
-import java.util.Map.Entry;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
-import static io.netty.buffer.Unpooled.*;
+import static io.netty.buffer.Unpooled.copiedBuffer;
 import static io.netty.handler.codec.http.HttpHeaderNames.CONTENT_TYPE;
-import static io.netty.handler.codec.http.HttpHeaderNames.COOKIE;
 import static io.netty.handler.codec.http.HttpResponseStatus.FORBIDDEN;
+import static io.netty.handler.codec.http.HttpResponseStatus.OK;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 
 public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObject> {
@@ -65,7 +56,6 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
 
     private boolean readingChunks;
 
-    private final StringBuilder responseContent = new StringBuilder();
 
     private static final HttpDataFactory factory =
             new DefaultHttpDataFactory(DefaultHttpDataFactory.MINSIZE); // Disk if size exceed
@@ -89,9 +79,13 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
         // exit (in normal exit)
         DiskAttribute.baseDirectory = null; // system temp directory
     }
+
     IServiceProvider site;
+    FileSystem fileSystem;
+
     public HttpUploadServerHandler(IServiceProvider site) {
-        this.site=site;
+        this.site = site;
+        fileSystem = (FileSystem) site.getService("$.fileSystem");
     }
 
     @Override
@@ -115,82 +109,48 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
         if (msg instanceof HttpRequest) {
             HttpRequest request = this.request = (HttpRequest) msg;
             URI uri = new URI(request.uri());
+            String url = uri.toString();
+            String cookieSeq = request.headers().getAndConvert(HttpHeaderNames.COOKIE);
+            String name = Utils.getFileName(url);
+            if ((cookieSeq == null || cookieSeq.length() == 0) && (name.lastIndexOf(".") < 0 || name.endsWith(".html"))) {
+                writeResource(ctx, "/login.html", null);
+                return;
+            }
+            Set<Cookie> cookies = ServerCookieDecoder.decode(cookieSeq);
+            Map<String, String> map = new HashMap<>();
+            for (Cookie cookie : cookies) {
+                map.put(cookie.name(), cookie.value());
+            }
             if (uri.getPath().startsWith("/mg")) {
                 // Write Menu
-                String url = uri.toString();
                 url = url.substring("/mg".length(), url.length());
-                writeMenu(ctx, url);
+                writeResource(ctx, url, null);
                 return;
+            } else if (uri.getPath().startsWith("/upload")) {
+                //放过去，是文件
             } else if (uri.getPath().startsWith("/fs")) {
+                QueryStringDecoder decoder = new QueryStringDecoder(url);
+                String dir=decoder.parameters().get("dir").get(0);
+                sendListing(ctx, dir, map.get("App-ID"), map.get("Access-Token"));
+                return;
             } else if (uri.getPath().startsWith("/bs")) {//后台服务
-                String url = uri.toString();
                 url = url.substring("/bs".length(), url.length());
                 doService(ctx, request, url);
+                return;
             } else {
                 sendError(ctx, FORBIDDEN);
-                return;
-            }
-            responseContent.setLength(0);
-            responseContent.append("WELCOME TO THE WILD WILD WEB SERVER\r\n");
-            responseContent.append("===================================\r\n");
-
-            responseContent.append("VERSION: " + request.protocolVersion().text() + "\r\n");
-
-            responseContent.append("REQUEST_URI: " + request.uri() + "\r\n\r\n");
-            responseContent.append("\r\n\r\n");
-
-            // new getMethod
-            for (Entry<CharSequence, CharSequence> entry : request.headers()) {
-                responseContent.append("HEADER: " + entry.getKey() + '=' + entry.getValue() + "\r\n");
-            }
-            responseContent.append("\r\n\r\n");
-
-            // new getMethod
-            Set<Cookie> cookies;
-            String value = request.headers().getAndConvert(HttpHeaderNames.COOKIE);
-            if (value == null) {
-                cookies = Collections.emptySet();
-            } else {
-                cookies = ServerCookieDecoder.decode(value);
-            }
-            for (Cookie cookie : cookies) {
-                responseContent.append("COOKIE: " + cookie + "\r\n");
-            }
-            responseContent.append("\r\n\r\n");
-
-            QueryStringDecoder decoderQuery = new QueryStringDecoder(request.uri());
-            Map<String, List<String>> uriAttributes = decoderQuery.parameters();
-            for (Entry<String, List<String>> attr : uriAttributes.entrySet()) {
-                for (String attrVal : attr.getValue()) {
-                    responseContent.append("URI: " + attr.getKey() + '=' + attrVal + "\r\n");
-                }
-            }
-            responseContent.append("\r\n\r\n");
-
-            // if GET Method: should not try to create a HttpPostRequestDecoder
-            if (request.method().equals(HttpMethod.GET)) {
-                // GET Method: should not try to create a HttpPostRequestDecoder
-                // So stop here
-                responseContent.append("\r\n\r\nEND OF GET CONTENT\r\n");
-                // Not now: LastHttpContent will be sent writeResponse(ctx.channel());
                 return;
             }
             try {
                 decoder = new HttpPostRequestDecoder(factory, request);
             } catch (ErrorDataDecoderException e1) {
                 e1.printStackTrace();
-                responseContent.append(e1.getMessage());
-                writeResponse(ctx.channel());
                 ctx.channel().close();
                 return;
             }
 
             readingChunks = HttpHeaderUtil.isTransferEncodingChunked(request);
-            responseContent.append("Is Chunked: " + readingChunks + "\r\n");
-            responseContent.append("IsMultipart: " + decoder.isMultipart() + "\r\n");
             if (readingChunks) {
-                // Chunk version
-                responseContent.append("Chunks: ");
                 readingChunks = true;
             }
         }
@@ -205,27 +165,22 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
                     decoder.offer(chunk);
                 } catch (ErrorDataDecoderException e1) {
                     e1.printStackTrace();
-                    responseContent.append(e1.getMessage());
-                    writeResponse(ctx.channel());
                     ctx.channel().close();
                     return;
                 }
-                responseContent.append('o');
                 // example of reading chunk by chunk (minimize memory usage due to
                 // Factory)
                 readHttpDataChunkByChunk();
                 // example of reading only if at the end
                 if (chunk instanceof LastHttpContent) {
-                    writeResponse(ctx.channel());
                     readingChunks = false;
 
                     reset();
                 }
             }
-        } else {
-            writeResponse(ctx.channel());
         }
     }
+
 
     private void doService(ChannelHandlerContext ctx, HttpRequest request, String url) {
         if (url.startsWith("/login.service")) {
@@ -240,7 +195,7 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
         String pwd = params.get("pwd");
         String appid = params.get("appid");
         IUCPorts iucPorts = (IUCPorts) site.getService("$.uc.ports");
-        Map<String,Object> result=iucPorts.auth(appid,user,pwd);
+        Map<String, Object> result = iucPorts.auth(appid, user, pwd);
         System.out.println(result);
         boolean close = request.headers().contains(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE, true)
                 || request.protocolVersion().equals(HttpVersion.HTTP_1_0)
@@ -249,15 +204,19 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
         // Build the response object.
         FullHttpResponse response = new DefaultFullHttpResponse(
                 HttpVersion.HTTP_1_1, HttpResponseStatus.FOUND);
-        response.headers().add(HttpHeaderNames.LOCATION,"mg/index.html");
+        response.headers().add(HttpHeaderNames.LOCATION, "/mg/index.html");
         response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=UTF-8");
-        List<Cookie> cookies=new ArrayList<>();
-        Cookie appidCookie = new DefaultCookie("App-ID",appid);
-        Cookie tokenCookie = new DefaultCookie("Access-Token",result.get("accessToken")+"");
+        List<Cookie> cookies = new ArrayList<>();
+        Cookie appidCookie = new DefaultCookie("App-ID", appid);
+        appidCookie.setPath("/");
+        appidCookie.setMaxAge(9999999999999999L);
+        Cookie tokenCookie = new DefaultCookie("Access-Token", result.get("accessToken") + "");
+        tokenCookie.setPath("/");
+        tokenCookie.setMaxAge(9999999999999999L);
         cookies.add(appidCookie);
         cookies.add(tokenCookie);
-        List<String> v=ServerCookieEncoder.encode(cookies);
-        response.headers().set(HttpHeaderNames.SET_COOKIE,v);
+        List<String> v = ServerCookieEncoder.encode(cookies);
+        response.headers().set(HttpHeaderNames.SET_COOKIE, v);
         if (!close) {
             response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, 0);
         }
@@ -296,7 +255,7 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
             }
         } catch (EndOfDataDecoderException e1) {
             // end
-            responseContent.append("\r\n\r\nEND OF CONTENT CHUNK BY CHUNK\r\n\r\n");
+            e1.printStackTrace();
         }
     }
 
@@ -307,36 +266,46 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
             try {
                 value = attribute.getValue();
             } catch (IOException e1) {
-                // Error while reading data from File, only print name and error
                 e1.printStackTrace();
-                responseContent.append("\r\nBODY Attribute: " + attribute.getHttpDataType().name() + ": "
-                        + attribute.getName() + " Error while reading value: " + e1.getMessage() + "\r\n");
                 return;
             }
-            if (value.length() > 100) {
-                responseContent.append("\r\nBODY Attribute: " + attribute.getHttpDataType().name() + ": "
-                        + attribute.getName() + " data too long\r\n");
-            } else {
-                responseContent.append("\r\nBODY Attribute: " + attribute.getHttpDataType().name() + ": "
-                        + attribute + "\r\n");
-            }
         } else {
-            responseContent.append("\r\nBODY FileUpload: " + data.getHttpDataType().name() + ": " + data
-                    + "\r\n");
             if (data.getHttpDataType() == HttpDataType.FileUpload) {
                 FileUpload fileUpload = (FileUpload) data;
                 if (fileUpload.isCompleted()) {
-                    if (fileUpload.length() < 10000) {
-                        responseContent.append("\tContent of file\r\n");
-                        try {
-                            responseContent.append(fileUpload.getString(fileUpload.getCharset()));
-                        } catch (IOException e1) {
-                            // do nothing for the example
-                            e1.printStackTrace();
+                    String fileName = fileUpload.getFilename();
+                    String path = String.format("/%s", fileName);
+                    IFileWriter writer = null;
+                    try {
+                        writer = fileSystem.openWriter(path);
+                        if (fileUpload.isInMemory()) {
+                            byte[] buf = fileUpload.get();
+                            writer.write(buf);
+                        } else {
+                            System.out.println(fileUpload.isInMemory());
+                            File file = fileUpload.getFile();
+                            FileInputStream in = new FileInputStream(file);
+                            byte[] buf = new byte[8192];
+                            while (true) {
+                                int reads = in.read(buf, 0, buf.length);
+                                if (reads < 0) {
+                                    break;
+                                }
+                                writer.write(buf, 0, reads);
+                            }
+                            System.out.println(file);
                         }
-                        responseContent.append("\r\n");
-                    } else {
-                        responseContent.append("\tFile too long to be printed out:" + fileUpload.length() + "\r\n");
+
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    } finally {
+                        if (writer != null) {
+                            try {
+                                writer.close();
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        }
                     }
                     // fileUpload.isInMemory();// tells if the file is in Memory
                     // or on File
@@ -345,55 +314,66 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
                     // decoder.removeFileUploadFromClean(fileUpload); //remove
                     // the File of to delete file
                 } else {
-                    responseContent.append("\tFile to be continued but should not!\r\n");
                 }
             }
         }
     }
 
-    private void writeResponse(Channel channel) {
-        // Convert the response content to a ChannelBuffer.
-        ByteBuf buf = copiedBuffer(responseContent.toString(), CharsetUtil.UTF_8);
-        responseContent.setLength(0);
-
-        // Decide whether to close the connection or not.
-        boolean close = request.headers().contains(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE, true)
-                || request.protocolVersion().equals(HttpVersion.HTTP_1_0)
-                && !request.headers().contains(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE, true);
-
-        // Build the response object.
-        FullHttpResponse response = new DefaultFullHttpResponse(
-                HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buf);
-        response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=UTF-8");
-
-        if (!close) {
-            // There's no need to add 'Content-Length' header
-            // if this is the last response.
-            response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, buf.readableBytes());
-        }
-
-        Set<Cookie> cookies;
-        String value = request.headers().getAndConvert(HttpHeaderNames.COOKIE);
-        if (value == null) {
-            cookies = Collections.emptySet();
-        } else {
-            cookies = ServerCookieDecoder.decode(value);
-        }
-        if (!cookies.isEmpty()) {
-            // Reset the cookies if necessary.
-            for (Cookie cookie : cookies) {
-                response.headers().add(HttpHeaderNames.SET_COOKIE, ServerCookieEncoder.encode(cookie));
+    private void sendListing(ChannelHandlerContext ctx, String dirPath, String appid, String token) {
+        String qs = String.format("?App-ID=%s&Access-Token=%s", appid, token);
+        FullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, OK);
+        response.headers().set(CONTENT_TYPE, "text/html; charset=UTF-8");
+        String parentDir="";
+        if ("/".equals(dirPath)) {
+            parentDir = "/";
+        }else{
+            parentDir=dirPath;
+            while (parentDir.endsWith("/")){
+                parentDir = parentDir.substring(0, parentDir.length()-1);
+            }
+            int pos = parentDir.lastIndexOf("/");
+            parentDir = parentDir.substring(0, pos);
+            if ("".endsWith(parentDir)) {
+                parentDir = "/";
             }
         }
-        // Write the response.
-        ChannelFuture future = channel.writeAndFlush(response);
-        // Close the connection after the write operation is done if necessary.
-        if (close) {
-            future.addListener(ChannelFutureListener.CLOSE);
+        StringBuilder buf = new StringBuilder()
+                .append(String.format("<div currentDir='%s'>\r\n",parentDir))
+                .append("<h3>Listing of: ")
+                .append(dirPath)
+                .append("</h3>\r\n")
+                .append("<ul>")
+                .append(String.format("<li  style='list-style: none;'><a parentDir='%s' style='text-decoration: none; ' href='#'>..</a></li>\r\n",parentDir));
+
+        for (String name : fileSystem.listDir(dirPath)) {
+            buf.append("<li style='list-style: none;'><a dir='"+name+"' style='text-decoration: none; ' href=\"")
+                    .append(name)
+                    .append(qs)
+                    .append("\">")
+                    .append("+&nbsp;&nbsp;")
+                    .append(name)
+                    .append("</a></li>\r\n");
         }
+        for (String name : fileSystem.listFile(dirPath)) {
+            buf.append("<li  style='list-style: none;'><a style='text-decoration: none; ' href=\"")
+                    .append(name)
+                    .append(qs)
+                    .append("\">")
+                    .append("-&nbsp;&nbsp;")
+                    .append(name)
+                    .append("</a></li>\r\n");
+        }
+
+        buf.append("</ul></div>\r\n");
+        ByteBuf buffer = Unpooled.copiedBuffer(buf, CharsetUtil.UTF_8);
+        response.content().writeBytes(buffer);
+        buffer.release();
+
+        // Close the connection as soon as the error message is sent.
+        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
     }
 
-    void writeMenu(ChannelHandlerContext ctx, String url) {
+    void writeResource(ChannelHandlerContext ctx, String url, Set<Cookie> cookies) {
         ClassLoader cl = getClass().getClassLoader();
         url = String.format("site%s", url);
 
@@ -440,6 +420,11 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
                 }
             }
             response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, buf.readableBytes());
+            if (cookies != null && !cookies.isEmpty()) {
+                for (Cookie cookie : cookies) {
+                    response.headers().add(HttpHeaderNames.SET_COOKIE, ServerCookieEncoder.encode(cookie));
+                }
+            }
             ctx.writeAndFlush(response);
         } catch (IOException e) {
             e.printStackTrace();
@@ -449,7 +434,7 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-        logger.log(Level.WARNING, responseContent.toString(), cause);
+        cause.printStackTrace();
         ctx.channel().close();
     }
 }

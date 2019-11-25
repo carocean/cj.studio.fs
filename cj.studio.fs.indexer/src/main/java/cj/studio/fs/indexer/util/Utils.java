@@ -35,7 +35,11 @@ public class Utils {
     }
 
     public static String getFileName(String file) {
-        int pos = file.lastIndexOf("/");
+        int pos = file.lastIndexOf("?");
+        if (pos > -1) {
+            file = file.substring(0, pos);
+        }
+        pos = file.lastIndexOf("/");
         if (pos < 0) {
             throw new RuntimeException("路径错误");
         }
@@ -154,13 +158,13 @@ public class Utils {
 
     public static String getPathWithoutQuerystring(String uri) {
         int pos = uri.indexOf("?");
-        if(pos<0)return uri;
+        if (pos < 0) return uri;
         return uri.substring(0, pos);
     }
 
     public static String getQuerystring(String uri) {
-        int pos=uri.indexOf("?");
-        if(pos<0)return "";
+        int pos = uri.indexOf("?");
+        if (pos < 0) return "";
         return uri.substring(pos + 1, uri.length());
     }
 }

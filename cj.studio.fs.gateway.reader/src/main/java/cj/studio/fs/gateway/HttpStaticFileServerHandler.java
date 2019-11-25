@@ -27,6 +27,7 @@ import io.netty.handler.codec.http.*;
 import io.netty.util.CharsetUtil;
 
 import javax.activation.MimetypesFileTypeMap;
+import java.net.URLDecoder;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
@@ -108,7 +109,8 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
             return;
         }
 
-        final String uri = request.uri();
+         String uri = request.uri();
+        uri = URLDecoder.decode(uri, "utf-8");
         final String path = Utils.getPathWithoutQuerystring(uri);
         if (path == null) {
             sendError(ctx, FORBIDDEN);

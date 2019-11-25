@@ -2,7 +2,7 @@ $(document).ready(function(){
     var uploader = easyUploader({
         id: "uploader",
         accept: '*.*',
-        action: 'https://jsonplaceholder.typicode.com/posts/',
+        action: '/upload/uploader.service',
         dataFormat: 'formData',
         maxCount: 10,
         maxSize: 3,
@@ -10,9 +10,8 @@ $(document).ready(function(){
         data: null,
         beforeUpload: function (file, data, args) {
             /* dataFormat为formData时配置发送数据的方式 */
-            data.append('token', '387126b0-7b3e-4a2a-86ad-ae5c5edd0ae6TT');
-            data.append('otherKey', 'otherValue');
-
+            // data.append('token', '387126b0-7b3e-4a2a-86ad-ae5c5edd0ae6TT');
+            // data.append('otherKey', 'otherValue');
             /* dataFormat为base64时配置发送数据的方式 */
             // data.base = file.base;
             // data.token = '387126b0-7b3e-4a2a-86ad-ae5c5edd0ae6TT';
@@ -54,5 +53,25 @@ $(document).ready(function(){
     $('#create-folder').on('click',function(){
         alert('')
     });
-
+    $.get('/fs/list',{dir:'/'},function(html){
+        $('.fs-content').html(html);
+    });
+    $(".fs-content").undelegate('a[dir]','click');
+    $(".fs-content").delegate('a[dir]','click',function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        var dir=$(this).attr('dir');
+        $.get('/fs/list',{dir:dir},function(html){
+            $('.fs-content').html(html);
+        });
+    });
+    $(".fs-content").undelegate('a[parentDir]','click');
+    $(".fs-content").delegate('a[parentDir]','click',function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        var dir=$(this).attr('parentDir');
+        $.get('/fs/list',{dir:dir},function(html){
+            $('.fs-content').html(html);
+        });
+    });
 });
