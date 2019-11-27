@@ -2,16 +2,12 @@ package cj.studio.fs.indexer.util;
 
 import cj.studio.fs.indexer.FileInfo;
 import cj.studio.fs.indexer.FileType;
-import io.netty.handler.codec.http.Cookie;
-import io.netty.handler.codec.http.FullHttpRequest;
-import io.netty.handler.codec.http.HttpHeaderNames;
-import io.netty.handler.codec.http.ServerCookieDecoder;
+import cj.studio.fs.indexer.IPage;
+import io.netty.handler.codec.http.*;
 import org.apache.jdbm.DB;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Set;
-import java.util.UUID;
+import java.text.DecimalFormat;
+import java.util.*;
 
 public class Utils {
     public static String getParentDir(String file) {
@@ -156,7 +152,7 @@ public class Utils {
         return "";
     }
 
-    public static String getPathWithoutQuerystring(String uri) {
+    public static synchronized String getPathWithoutQuerystring(String uri) {
         int pos = uri.indexOf("?");
         if (pos < 0) return uri;
         return uri.substring(0, pos);
@@ -166,5 +162,59 @@ public class Utils {
         int pos = uri.indexOf("?");
         if (pos < 0) return "";
         return uri.substring(pos + 1, uri.length());
+    }
+
+    public static String getPrintSize(long size) {
+        //获取到的size为：1705230
+        int GB = 1024 * 1024 * 1024;//定义GB的计算常量
+        int MB = 1024 * 1024;//定义MB的计算常量
+        int KB = 1024;//定义KB的计算常量
+        DecimalFormat df = new DecimalFormat("0.00");//格式化小数
+        String resultSize = "";
+        if (size / GB >= 1) {
+            //如果当前Byte的值大于等于1GB
+            resultSize = df.format(size / (float) GB) + "GB   ";
+        } else if (size / MB >= 1) {
+            //如果当前Byte的值大于等于1MB
+            resultSize = df.format(size / (float) MB) + "MB   ";
+        } else if (size / KB >= 1) {
+            //如果当前Byte的值大于等于1KB
+            resultSize = df.format(size / (float) KB) + "KB   ";
+        } else {
+            resultSize = size + "B   ";
+        }
+        return resultSize;
+    }
+
+    public static String getFolder(String dir) {
+        if ("/".equals(dir)) {
+            return "";
+        }
+        while (dir.endsWith("/")) {
+            dir = dir.substring(0, dir.length() - 1);
+        }
+        int pos = dir.lastIndexOf("/");
+        if (pos < 0) {
+            return "";
+        }
+        return dir.substring(pos + 1, dir.length());
+    }
+
+    public static synchronized IPage getPage(String uri, Map<String, IPage> pages) {
+        String path = getPathWithoutQuerystring(uri);
+        IPage page = pages.get(path);
+        if (page != null) return page;
+        if (path.endsWith("/")) {
+            path = path.substring(0, path.length() - 1);
+        } else {
+            path = path + "/";
+        }
+        return pages.get(path);
+    }
+
+    public static Map<String, List<String>> parameters(HttpRequest request) {
+        QueryStringDecoder decoder = new QueryStringDecoder(request.uri());
+        Map<String, List<String>> params= decoder.parameters();
+        return params;
     }
 }

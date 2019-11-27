@@ -1,0 +1,81 @@
+html * {
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    padding: 0;
+    margin: 0;
+}
+
+.wrap {
+    margin: 0px auto 0px auto;
+    width: 1100px;
+}
+
+.header {
+    background: black;
+    height: 40px;
+    width: 100%;
+}
+
+.header > .header-container {
+    position: relative;
+    height: 100%;
+}
+
+.header > .header-container > .header-title {
+    position: absolute;
+    left: 0px;
+    bottom: 10px;
+    color: white;
+    z-index: 999999;
+}
+
+.content {
+    height: 100%;
+}
+
+.content > .file-uploads {
+    padding: 10px 0 10px 0;
+}
+
+.content > .fs-region {
+    min-height: 400px;
+    width: 100%;
+}
+
+.content > .fs-region > .fs-dirs {
+    padding: 10px 10px 10px 0;
+}
+
+.content > .fs-region > .fs-dirs > .create-folder {
+    padding: 5px;
+    border-left: none;
+    border-right: none;
+    border-top: none;
+    border-bottom: 1px solid #cecece;
+    width: 200px;
+}
+
+.content > .fs-region > .fs-browser {
+
+}
+.fs-content li[type]{
+    position: relative;
+    padding: 4px 0 4px 0;
+}
+.fs-content li[type]:hover{
+    background: #f5f5f5;
+}
+.fs-content .del{
+    color: red;
+    display: none;
+    position: absolute;
+    right:0;
+    top:-5px;
+    padding: 10px;
+}
+.fs-content .del:hover{
+    cursor: pointer;
+}

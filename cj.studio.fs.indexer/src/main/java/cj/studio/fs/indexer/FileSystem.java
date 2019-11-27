@@ -42,6 +42,11 @@ public class FileSystem implements IDirectory {
         }
     }
 
+    @Override
+    public void mkdirs(String dir) {
+        Utils.mkdirs(db, dir);
+    }
+
     public IFileWriter openWriter(String file) throws FileNotFoundException {
         IFileWriter writer = new FileWriter(this.site, file);
         return writer;
@@ -128,8 +133,14 @@ public class FileSystem implements IDirectory {
         for (String child : childs) {
             deleteDir(child);
         }
-        if (!"".equals(dir) && !"/".equals(dir)) {
+        if (db.getCollections().containsKey(dir) && !"".equals(dir) && !"/".equals(dir)) {
             db.deleteCollection(dir);
+        }
+        String parent = Utils.getParentDir(dir);
+        Map<String, FileInfo> parentMap = db.getTreeMap(parent);
+        if (parentMap != null) {
+            String folder = Utils.getFolder(dir);
+            parentMap.remove(folder);
         }
         db.commit();
     }
@@ -165,15 +176,15 @@ public class FileSystem implements IDirectory {
 
     @Override
     public boolean isDirectory(String path) {
-        int pos=path.indexOf("?");
-        if(pos>-1){
+        int pos = path.indexOf("?");
+        if (pos > -1) {
             path = path.substring(0, pos);
         }
-        if("/".equals(path)||"".equals(path)){
+        if ("/".equals(path) || "".equals(path)) {
             return true;
         }
-        while (path.endsWith("/")){
-            path=path.substring(0,path.length()-1);
+        while (path.endsWith("/")) {
+            path = path.substring(0, path.length() - 1);
         }
         return db.getCollections().containsKey(path);
     }

@@ -1,6 +1,8 @@
 package cj.studio.fs.gateway.writer;
 
+import cj.studio.fs.gateway.writer.pages.*;
 import cj.studio.fs.indexer.*;
+import cj.studio.fs.indexer.IPage;
 import cj.studio.fs.indexer.util.Utils;
 import okhttp3.ConnectionPool;
 import okhttp3.OkHttpClient;
@@ -9,6 +11,8 @@ import org.apache.log4j.PropertyConfigurator;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 public class Gateway implements IServiceProvider{
@@ -17,7 +21,7 @@ public class Gateway implements IServiceProvider{
     IAccessController controller;
     IUCPorts iucPorts;
     OkHttpClient okhttp;
-
+    Map<String, IPage> pages;
     public Options getOptions() {
         Options options = new Options();
         options.addOption(new Option("d", "debug", true, "调试目录"));
@@ -67,6 +71,19 @@ public class Gateway implements IServiceProvider{
                 build();
         iucPorts = new DefaultUCPorts(this);
         controller = new DefaultReadAccessController(this);
+        pages=new HashMap<>();
+        IPage list=new ListFilePage();
+        pages.put(list.path(),list);
+        IPage login=new LoginPage();
+        pages.put(login.path(), login);
+        IPage index=new IndexPage();
+        pages.put(index.path(), index);
+        IPage upload=new UploadPage();
+        pages.put(upload.path(), upload);
+        IPage create=new CreateDirPage();
+        pages.put(create.path(), create);
+        IPage delete=new DeletePage();
+        pages.put(delete.path(), delete);
     }
 
     @Override
@@ -85,6 +102,9 @@ public class Gateway implements IServiceProvider{
         }
         if ("$.okhttp".equals(name)) {
             return okhttp;
+        }
+        if ("$.pages".equals(name)) {
+            return pages;
         }
         return null;
     }

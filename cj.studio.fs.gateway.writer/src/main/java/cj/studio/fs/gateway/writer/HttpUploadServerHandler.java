@@ -15,10 +15,9 @@
  */
 package cj.studio.fs.gateway.writer;
 
-import cj.studio.fs.indexer.FileSystem;
-import cj.studio.fs.indexer.IFileWriter;
-import cj.studio.fs.indexer.IServiceProvider;
-import cj.studio.fs.indexer.IUCPorts;
+import cj.studio.fs.gateway.writer.pages.UploadPage;
+import cj.studio.fs.indexer.*;
+import cj.studio.fs.indexer.IPage;
 import cj.studio.fs.indexer.util.Utils;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
@@ -37,15 +36,12 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
-import java.net.URLDecoder;
-import java.nio.charset.Charset;
 import java.util.*;
 import java.util.logging.Logger;
 
 import static io.netty.buffer.Unpooled.copiedBuffer;
 import static io.netty.handler.codec.http.HttpHeaderNames.CONTENT_TYPE;
-import static io.netty.handler.codec.http.HttpResponseStatus.FORBIDDEN;
-import static io.netty.handler.codec.http.HttpResponseStatus.OK;
+import static io.netty.handler.codec.http.HttpResponseStatus.*;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 
 public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObject> {
@@ -80,12 +76,15 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
         DiskAttribute.baseDirectory = null; // system temp directory
     }
 
+    String dir = "/";
     IServiceProvider site;
     FileSystem fileSystem;
+    Map<String, IPage> pages;
 
     public HttpUploadServerHandler(IServiceProvider site) {
         this.site = site;
         fileSystem = (FileSystem) site.getService("$.fileSystem");
+        pages = (Map<String, IPage>) site.getService("$.pages");
     }
 
     @Override
@@ -108,39 +107,80 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
     public void messageReceived(ChannelHandlerContext ctx, HttpObject msg) throws Exception {
         if (msg instanceof HttpRequest) {
             HttpRequest request = this.request = (HttpRequest) msg;
-            URI uri = new URI(request.uri());
-            String url = uri.toString();
-            String cookieSeq = request.headers().getAndConvert(HttpHeaderNames.COOKIE);
-            String name = Utils.getFileName(url);
-            if ((cookieSeq == null || cookieSeq.length() == 0) && (name.lastIndexOf(".") < 0 || name.endsWith(".html"))) {
-                writeResource(ctx, "/login.html", null);
+            IPageContext context = new DefaultPageContext(site, fileSystem, ctx,dir, request, mimes);
+            if (context.isResource()) {
+                try {
+                    context.writeResource(request.uri(), null);
+                } catch (Exception e) {
+                    sendError(ctx, HttpResponseStatus.parseLine(String.format("500 %s", e.getMessage())));
+                    e.printStackTrace();
+                } finally {
+                    if (context != null) {
+                        context.dispose();
+                    }
+                }
                 return;
             }
-            Set<Cookie> cookies = ServerCookieDecoder.decode(cookieSeq);
-            Map<String, String> map = new HashMap<>();
-            for (Cookie cookie : cookies) {
-                map.put(cookie.name(), cookie.value());
+            boolean isLoginService=request.uri().startsWith("/public/login.service");
+            if (isLoginService||!isLogin(request)) {
+                IPage page = Utils.getPage("/public/login.html", pages);
+                if(request.uri().startsWith("/public/login.html")){
+                    try {
+                        context.writeResource(request.uri(), null);
+                    } catch (Exception e) {
+                        sendError(ctx, HttpResponseStatus.parseLine(String.format("500 %s", e.getMessage())));
+                        e.printStackTrace();
+                    } finally {
+                        if (context != null) {
+                            context.dispose();
+                        }
+                    }
+                    return;
+                }else{
+                    if(!isLoginService){
+                        context.redirect(page.path());
+                        return;
+                    }
+                }
+
+                try {
+                    page.doService(context);
+                } catch (Exception e) {
+                    sendError(ctx, HttpResponseStatus.parseLine(String.format("500 %s", e.getMessage())));
+                    e.printStackTrace();
+                } finally {
+                    if (context != null) {
+                        context.dispose();
+                    }
+                }
+                return;
             }
-            if (uri.getPath().startsWith("/mg")) {
-                // Write Menu
-                url = url.substring("/mg".length(), url.length());
-                writeResource(ctx, url, null);
-                return;
-            } else if (uri.getPath().startsWith("/upload")) {
-                //放过去，是文件
-            } else if (uri.getPath().startsWith("/fs")) {
-                QueryStringDecoder decoder = new QueryStringDecoder(url);
-                String dir=decoder.parameters().get("dir").get(0);
-                sendListing(ctx, dir, map.get("App-ID"), map.get("Access-Token"));
-                return;
-            } else if (uri.getPath().startsWith("/bs")) {//后台服务
-                url = url.substring("/bs".length(), url.length());
-                doService(ctx, request, url);
-                return;
-            } else {
-                sendError(ctx, FORBIDDEN);
+            if ("/".equals(request.uri())) {
+                context.redirect("/mg/index.html");
                 return;
             }
+
+            IPage page = Utils.getPage(request.uri(), pages);
+            if(!(page instanceof UploadPage)) {
+                if (page != null) {
+                    try {
+                        page.doService(context);
+                        return;
+                    } catch (Exception e) {
+                        sendError(ctx, HttpResponseStatus.parseLine(String.format("500 %s", e.getMessage())));
+                        e.printStackTrace();
+                        return;
+                    } finally {
+                        if (context != null) {
+                            context.dispose();
+                        }
+                    }
+                } else {//上传放过去
+                    sendError(ctx, NOT_FOUND);
+                    return;
+                }
+            }
+            //其下处理上传
             try {
                 decoder = new HttpPostRequestDecoder(factory, request);
             } catch (ErrorDataDecoderException e1) {
@@ -153,6 +193,8 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
             if (readingChunks) {
                 readingChunks = true;
             }
+            QueryStringDecoder decoder = new QueryStringDecoder(request.uri());
+            dir = decoder.parameters().get("dir").get(0);
         }
 
         // check if the decoder was constructed before
@@ -173,61 +215,28 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
                 readHttpDataChunkByChunk();
                 // example of reading only if at the end
                 if (chunk instanceof LastHttpContent) {
+                    StringBuilder sb = new StringBuilder();
+                    sb.append(String.format("{ \"code\": 200, \"data\": \"%s\" }", dir));
+                    writeResponse(ctx.channel(), sb);
                     readingChunks = false;
-
                     reset();
                 }
             }
         }
     }
 
-
-    private void doService(ChannelHandlerContext ctx, HttpRequest request, String url) {
-        if (url.startsWith("/login.service")) {
-            login(ctx, url);
-            return;
+    private boolean isLogin(HttpRequest request) {
+        String cookieSeq = request.headers().getAndConvert(HttpHeaderNames.COOKIE);
+        String name = Utils.getFileName(request.uri());
+        if ((cookieSeq == null || cookieSeq.length() == 0) && (name.lastIndexOf(".") < 0 || name.endsWith(".html"))) {
+            return false;
         }
+        return true;
     }
 
-    private void login(ChannelHandlerContext ctx, String url) {
-        Map<String, String> params = Utils.parseQueryString(url);
-        String user = params.get("user");
-        String pwd = params.get("pwd");
-        String appid = params.get("appid");
-        IUCPorts iucPorts = (IUCPorts) site.getService("$.uc.ports");
-        Map<String, Object> result = iucPorts.auth(appid, user, pwd);
-        System.out.println(result);
-        boolean close = request.headers().contains(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE, true)
-                || request.protocolVersion().equals(HttpVersion.HTTP_1_0)
-                && !request.headers().contains(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE, true);
 
-        // Build the response object.
-        FullHttpResponse response = new DefaultFullHttpResponse(
-                HttpVersion.HTTP_1_1, HttpResponseStatus.FOUND);
-        response.headers().add(HttpHeaderNames.LOCATION, "/mg/index.html");
-        response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=UTF-8");
-        List<Cookie> cookies = new ArrayList<>();
-        Cookie appidCookie = new DefaultCookie("App-ID", appid);
-        appidCookie.setPath("/");
-        appidCookie.setMaxAge(9999999999999999L);
-        Cookie tokenCookie = new DefaultCookie("Access-Token", result.get("accessToken") + "");
-        tokenCookie.setPath("/");
-        tokenCookie.setMaxAge(9999999999999999L);
-        cookies.add(appidCookie);
-        cookies.add(tokenCookie);
-        List<String> v = ServerCookieEncoder.encode(cookies);
-        response.headers().set(HttpHeaderNames.SET_COOKIE, v);
-        if (!close) {
-            response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, 0);
-        }
 
-        // Write the response.
-        ChannelFuture future = ctx.channel().writeAndFlush(response);
-        // Close the connection after the write operation is done if necessary.
-        if (close) {
-            future.addListener(ChannelFutureListener.CLOSE);
-        }
-    }
+
 
     private void reset() {
         request = null;
@@ -260,177 +269,94 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
     }
 
     private void writeHttpData(InterfaceHttpData data) {
-        if (data.getHttpDataType() == HttpDataType.Attribute) {
-            Attribute attribute = (Attribute) data;
-            String value;
-            try {
-                value = attribute.getValue();
-            } catch (IOException e1) {
-                e1.printStackTrace();
-                return;
+        if (data.getHttpDataType() != HttpDataType.FileUpload) {
+            return;
+        }
+        FileUpload fileUpload = (FileUpload) data;
+        if (fileUpload.isCompleted()) {
+            String fileName = fileUpload.getFilename();
+            String currDir = dir;
+            if (!currDir.endsWith("/")) {
+                currDir = currDir + "/";
             }
-        } else {
-            if (data.getHttpDataType() == HttpDataType.FileUpload) {
-                FileUpload fileUpload = (FileUpload) data;
-                if (fileUpload.isCompleted()) {
-                    String fileName = fileUpload.getFilename();
-                    String path = String.format("/%s", fileName);
-                    IFileWriter writer = null;
-                    try {
-                        writer = fileSystem.openWriter(path);
-                        if (fileUpload.isInMemory()) {
-                            byte[] buf = fileUpload.get();
-                            writer.write(buf);
-                        } else {
-                            System.out.println(fileUpload.isInMemory());
-                            File file = fileUpload.getFile();
-                            FileInputStream in = new FileInputStream(file);
-                            byte[] buf = new byte[8192];
-                            while (true) {
-                                int reads = in.read(buf, 0, buf.length);
-                                if (reads < 0) {
-                                    break;
-                                }
-                                writer.write(buf, 0, reads);
-                            }
-                            System.out.println(file);
+            String path = String.format("%s%s", currDir, fileName);
+            IFileWriter writer = null;
+            try {
+                writer = fileSystem.openWriter(path);
+                if (fileUpload.isInMemory()) {
+                    byte[] buf = fileUpload.get();
+                    writer.write(buf);
+                } else {
+                    File file = fileUpload.getFile();
+                    FileInputStream in = new FileInputStream(file);
+                    byte[] buf = new byte[8192];
+                    while (true) {
+                        int reads = in.read(buf, 0, buf.length);
+                        if (reads < 0) {
+                            break;
                         }
+                        writer.write(buf, 0, reads);
+                    }
+                }
 
+            } catch (IOException e) {
+                e.printStackTrace();
+            } finally {
+                if (writer != null) {
+                    try {
+                        writer.close();
                     } catch (IOException e) {
                         e.printStackTrace();
-                    } finally {
-                        if (writer != null) {
-                            try {
-                                writer.close();
-                            } catch (IOException e) {
-                                e.printStackTrace();
-                            }
-                        }
                     }
-                    // fileUpload.isInMemory();// tells if the file is in Memory
-                    // or on File
-                    // fileUpload.renameTo(dest); // enable to move into another
-                    // File dest
-                    // decoder.removeFileUploadFromClean(fileUpload); //remove
-                    // the File of to delete file
-                } else {
                 }
+
             }
         }
+
     }
 
-    private void sendListing(ChannelHandlerContext ctx, String dirPath, String appid, String token) {
-        String qs = String.format("?App-ID=%s&Access-Token=%s", appid, token);
-        FullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, OK);
-        response.headers().set(CONTENT_TYPE, "text/html; charset=UTF-8");
-        String parentDir="";
-        if ("/".equals(dirPath)) {
-            parentDir = "/";
-        }else{
-            parentDir=dirPath;
-            while (parentDir.endsWith("/")){
-                parentDir = parentDir.substring(0, parentDir.length()-1);
-            }
-            int pos = parentDir.lastIndexOf("/");
-            parentDir = parentDir.substring(0, pos);
-            if ("".endsWith(parentDir)) {
-                parentDir = "/";
-            }
-        }
-        StringBuilder buf = new StringBuilder()
-                .append(String.format("<div currentDir='%s'>\r\n",parentDir))
-                .append("<h3>Listing of: ")
-                .append(dirPath)
-                .append("</h3>\r\n")
-                .append("<ul>")
-                .append(String.format("<li  style='list-style: none;'><a parentDir='%s' style='text-decoration: none; ' href='#'>..</a></li>\r\n",parentDir));
+    private void writeResponse(Channel channel, StringBuilder responseContent) {
+        // Convert the response content to a ChannelBuffer.
+        ByteBuf buf = copiedBuffer(responseContent.toString(), CharsetUtil.UTF_8);
+        responseContent.setLength(0);
 
-        for (String name : fileSystem.listDir(dirPath)) {
-            buf.append("<li style='list-style: none;'><a dir='"+name+"' style='text-decoration: none; ' href=\"")
-                    .append(name)
-                    .append(qs)
-                    .append("\">")
-                    .append("+&nbsp;&nbsp;")
-                    .append(name)
-                    .append("</a></li>\r\n");
-        }
-        for (String name : fileSystem.listFile(dirPath)) {
-            buf.append("<li  style='list-style: none;'><a style='text-decoration: none; ' href=\"")
-                    .append(name)
-                    .append(qs)
-                    .append("\">")
-                    .append("-&nbsp;&nbsp;")
-                    .append(name)
-                    .append("</a></li>\r\n");
-        }
+        // Decide whether to close the connection or not.
+        boolean close = request.headers().contains(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE, true)
+                || request.protocolVersion().equals(HttpVersion.HTTP_1_0)
+                && !request.headers().contains(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE, true);
 
-        buf.append("</ul></div>\r\n");
-        ByteBuf buffer = Unpooled.copiedBuffer(buf, CharsetUtil.UTF_8);
-        response.content().writeBytes(buffer);
-        buffer.release();
+        // Build the response object.
+        FullHttpResponse response = new DefaultFullHttpResponse(
+                HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buf);
+        response.headers().set(HttpHeaderNames.CONTENT_TYPE, "text/plain; charset=UTF-8");
 
-        // Close the connection as soon as the error message is sent.
-        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-    }
-
-    void writeResource(ChannelHandlerContext ctx, String url, Set<Cookie> cookies) {
-        ClassLoader cl = getClass().getClassLoader();
-        url = String.format("site%s", url);
-
-        InputStream in = cl.getResourceAsStream(url);
-        try {
-
-            int pos = url.lastIndexOf(".");
-            String fn = "";
-            if (pos > -1) {
-                fn = url.substring(pos + 1, url.length());
-            }
-            if ("html".equals(fn)) {
-                Document document = Jsoup.parse(in, "utf-8", "");
-                ByteBuf buf = copiedBuffer(document.toString(), CharsetUtil.UTF_8);
-                // Build the response object.
-                FullHttpResponse response = new DefaultFullHttpResponse(
-                        HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buf);
-                response.headers().set(HttpHeaderNames.CONTENT_TYPE, mimes.get("html"));
-                response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, buf.readableBytes());
-                ctx.writeAndFlush(response);
-                return;
-            }
-            //下面是资源
-
-            ByteBuf buf = Unpooled.buffer();
-            byte[] data = new byte[8192];
-            while (true) {
-                int len = in.read(data);
-                if (len < 0) {
-                    break;
-                }
-                buf.writeBytes(data, 0, len);
-            }
-            FullHttpResponse response = new DefaultFullHttpResponse(
-                    HttpVersion.HTTP_1_1, HttpResponseStatus.OK, buf);
-            if (Utils.isEmpty(fn)) {
-                response.headers().set(HttpHeaderNames.CONTENT_TYPE, mimes.get("html"));
-            } else {
-                if (mimes.containsKey(fn)) {
-                    String mime = mimes.get(fn);
-                    response.headers().set(HttpHeaderNames.CONTENT_TYPE, mime);
-                } else {
-                    response.headers().set(HttpHeaderNames.CONTENT_TYPE, mimes.get("html"));
-                }
-            }
+        if (!close) {
+            // There's no need to add 'Content-Length' header
+            // if this is the last response.
             response.headers().setInt(HttpHeaderNames.CONTENT_LENGTH, buf.readableBytes());
-            if (cookies != null && !cookies.isEmpty()) {
-                for (Cookie cookie : cookies) {
-                    response.headers().add(HttpHeaderNames.SET_COOKIE, ServerCookieEncoder.encode(cookie));
-                }
-            }
-            ctx.writeAndFlush(response);
-        } catch (IOException e) {
-            e.printStackTrace();
         }
 
+        Set<Cookie> cookies;
+        String value = request.headers().getAndConvert(HttpHeaderNames.COOKIE);
+        if (value == null) {
+            cookies = Collections.emptySet();
+        } else {
+            cookies = ServerCookieDecoder.decode(value);
+        }
+        if (!cookies.isEmpty()) {
+            // Reset the cookies if necessary.
+            for (Cookie cookie : cookies) {
+                response.headers().add(HttpHeaderNames.SET_COOKIE, ServerCookieEncoder.encode(cookie));
+            }
+        }
+        // Write the response.
+        ChannelFuture future = channel.writeAndFlush(response);
+        // Close the connection after the write operation is done if necessary.
+        if (close) {
+            future.addListener(ChannelFutureListener.CLOSE);
+        }
     }
+
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
