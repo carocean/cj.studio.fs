@@ -34,8 +34,6 @@ import org.jsoup.internal.StringUtil;
 
 public final class HttpStaticFileServer {
 
-    //    static final boolean SSL = System.getProperty("ssl") != null;
-//    static final int PORT = Integer.parseInt(System.getProperty("port", SSL ? "8443" : "8080"));
     static Logger logger = Logger.getLogger(HttpStaticFileServer.class);
 
     public void start(IServiceProvider site) throws Exception {

@@ -35,6 +35,21 @@ public interface IServerConfig {
     String rbacStrategy();
 
     List<String> rbacACL();
+
+    String writerServerIP();
+
+
+    int writerServerBufferSize();
+
+    int writerServerPort();
+
+    int writerServerChunkedSize();
+
+    int writerServerWorkThreadCount();
+
+    boolean writerServerSSL();
+
     boolean rbacForceToken();
+
 
 }

@@ -35,7 +35,10 @@ public class FileSystem implements IDirectory {
 
         this.db = DBMaker.openFile(this.indexDir.getAbsolutePath())
 //                .deleteFilesAfterClose()
-                .enableEncryption("password", false)
+//                .enableEncryption("password", false)
+                .disableLocking()
+                .disableTransactions()
+                .useRandomAccessFile()
                 .make();
         if (!db.getCollections().containsKey("/")) {
             Utils.mkdirs(db, "/");

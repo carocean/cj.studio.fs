@@ -31,6 +31,9 @@ public class ServerConfig implements IServerConfig {
     private boolean writerServerSSL;
     private String writerServerIP;
     private int writerServerPort;
+    private int writerServerChunkedSize;
+
+
     @Override
     public String writerReaderServer() {
         return writerReaderServer;
@@ -101,6 +104,7 @@ public class ServerConfig implements IServerConfig {
         return readerServerSSL;
     }
 
+
     @Override
     public int readerServerWorkThreadCount() {
         return readerServerWorkThreadCount;
@@ -127,19 +131,19 @@ public class ServerConfig implements IServerConfig {
         String dataDir = (String) info.get("dataDir");
         Map<String, Object> reader = (Map<String, Object>) info.get("reader");
         Map<String, Object> writer = (Map<String, Object>) info.get("writer");
-        parseWriterServer(config,writer);
+        parseWriterServer(config, writer);
         parseReaderServer(config, reader);
         config.dataDir(dataDir);
-        Map<String, Object> ucs =(Map<String, Object>) info.get("ucs");
-        config.uc_connectTimeout=Long.valueOf(ucs.get("connectTimeout")+"");
-        config.uc_keepAliveDuration=Long.valueOf(ucs.get("keepAliveDuration")+"");
-        config.uc_writeTimeout=Long.valueOf(ucs.get("writeTimeout")+"");
-        config.uc_maxIdleConnections=(int)ucs.get("maxIdleConnections");
-        config.uc_readTimeout=Long.valueOf(ucs.get("readTimeout")+"");
+        Map<String, Object> ucs = (Map<String, Object>) info.get("ucs");
+        config.uc_connectTimeout = Long.valueOf(ucs.get("connectTimeout") + "");
+        config.uc_keepAliveDuration = Long.valueOf(ucs.get("keepAliveDuration") + "");
+        config.uc_writeTimeout = Long.valueOf(ucs.get("writeTimeout") + "");
+        config.uc_maxIdleConnections = (int) ucs.get("maxIdleConnections");
+        config.uc_readTimeout = Long.valueOf(ucs.get("readTimeout") + "");
         config.ucAddresses = (List<String>) ucs.get("addresses");
 
         Map<String, Object> rbac = (Map<String, Object>) info.get("rbac");
-        config.rbacStrategy =(String) rbac.get("strategy");
+        config.rbacStrategy = (String) rbac.get("strategy");
         config.rbacACL = (List<String>) rbac.get("acl");
         config.rbacForceToken = (boolean) rbac.get("forceToken");
         return config;
@@ -187,35 +191,65 @@ public class ServerConfig implements IServerConfig {
         config.writerServerWorkThreadCount((int) server.get("workThreadCount"));
         config.writerServerChunkedSize((int) server.get("chunkedSize"));
         config.writerServerBufferSize((int) writer.get("bufferSize"));
-        config.writerReaderServer((String)writer.get("readerServer"));
+        config.writerReaderServer((String) writer.get("readerServer"));
+    }
+
+    @Override
+    public String writerServerIP() {
+        return writerServerIP;
+    }
+
+    @Override
+    public int writerServerBufferSize() {
+        return writerServerBufferSize;
+    }
+
+    @Override
+    public int writerServerPort() {
+        return writerServerPort;
+    }
+
+    @Override
+    public int writerServerChunkedSize() {
+        return writerServerChunkedSize;
+    }
+
+    @Override
+    public int writerServerWorkThreadCount() {
+        return writerServerWorkThreadCount;
+    }
+
+    @Override
+    public boolean writerServerSSL() {
+        return writerServerSSL;
     }
 
     private void writerReaderServer(String readerServer) {
-        this.writerReaderServer=readerServer;
+        this.writerReaderServer = readerServer;
     }
 
     private void writerServerBufferSize(int bufferSize) {
-        this.writerServerBufferSize=bufferSize;
+        this.writerServerBufferSize = bufferSize;
     }
 
     private void writerServerChunkedSize(int chunkedSize) {
-        this.writerServerBufferSize=chunkedSize;
+        this.writerServerChunkedSize = chunkedSize;
     }
 
     private void writerServerWorkThreadCount(int workThreadCount) {
-        this.writerServerWorkThreadCount=workThreadCount;
+        this.writerServerWorkThreadCount = workThreadCount;
     }
 
     private void writerServerSSL(boolean ssl) {
-        this.writerServerSSL=ssl;
+        this.writerServerSSL = ssl;
     }
 
     private void writerServerPort(int port) {
-        this.writerServerPort=port;
+        this.writerServerPort = port;
     }
 
     private void writerServerIP(String ip) {
-        this.writerServerIP=ip;
+        this.writerServerIP = ip;
     }
 
     @Override
@@ -224,7 +258,7 @@ public class ServerConfig implements IServerConfig {
     }
 
     private void readerServerBufferSize(int bufferSize) {
-        this.readerServerBufferSize =bufferSize;
+        this.readerServerBufferSize = bufferSize;
     }
 
     private void dataDir(String dataDir) {

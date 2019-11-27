@@ -17,6 +17,7 @@ package cj.studio.fs.gateway.writer;
 
 import cj.studio.fs.indexer.IServerConfig;
 import cj.studio.fs.indexer.IServiceProvider;
+import cj.studio.fs.indexer.util.Utils;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.Channel;
 import io.netty.channel.EventLoopGroup;
@@ -33,16 +34,14 @@ import org.apache.log4j.Logger;
  */
 public final class HttpUploadServer {
 
-    static final boolean SSL = System.getProperty("ssl") != null;
-    static final int PORT = Integer.parseInt(System.getProperty("port", SSL ? "8443" : "8080"));
     static Logger logger = Logger.getLogger(HttpUploadServer.class);
 
     public void start(IServiceProvider site) throws Exception {
         IServerConfig config = (IServerConfig) site.getService("$.config");
-        String ip = config.readerServerIP();
-        int port = config.readerServerPort();
-        boolean SSL = config.readerServerSSL();
-        int workThreadCount = config.readerServerWorkThreadCount();
+        String ip = config.writerServerIP();
+        int port = config.writerServerPort();
+        boolean SSL = config.writerServerSSL();
+        int workThreadCount = config.writerServerWorkThreadCount();
         // Configure SSL.
         final SslContext sslCtx;
         if (SSL) {
@@ -61,8 +60,12 @@ public final class HttpUploadServer {
             b.handler(new LoggingHandler(LogLevel.INFO));
             b.childHandler(new HttpUploadServerInitializer(sslCtx, site));
 
-            Channel ch = b.bind(PORT).sync().channel();
-
+            Channel ch = null;
+            if(Utils.isEmpty(ip)){
+                ch = b.bind(port).sync().channel();
+            }else{
+                ch = b.bind(ip,port).sync().channel();
+            }
             logger.debug("Open your web browser and navigate to " +
                     (SSL ? "https" : "http") + "://" + ip + ":" + port + '/');
 
