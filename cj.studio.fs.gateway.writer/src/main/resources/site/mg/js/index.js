@@ -96,7 +96,7 @@ $(document).ready(function(){
     $('.fs-content').undelegate('span.del','click');
     $('.fs-content').delegate('span.del','click',function(){
         var type=$(this).parents('li[type]').attr('type');
-        var path = $(this).siblings('a').attr('href');
+        var path = $(this).siblings('a').attr('path');
         $.get('/del/file/',{path:path,type:type},function(html){
             var currentdir=$('div[currentdir]').attr('currentdir');
             var dir=currentdir;

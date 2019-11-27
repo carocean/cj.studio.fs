@@ -72,7 +72,7 @@ public class ListFilePage implements IPage {
             buf.append("<li type='d' style='list-style: none;'><a dir='" + name + "' style='text-decoration: none; ' href=\"")
                     .append(name)
                     .append(qs)
-                    .append("\">")
+                    .append("\" path=\""+name+"\" >")
                     .append("+&nbsp;&nbsp;")
                     .append(name)
                     .append("</a><span op='del' class='del'>X</span></li>\r\n");
@@ -83,7 +83,7 @@ public class ListFilePage implements IPage {
             buf.append("<li type='f' style='list-style: none;'><a file style='text-decoration: none; ' href=\"")
                     .append(readerUrl)
                     .append(qs)
-                    .append("\">")
+                    .append("\" path=\""+name+"\" >")
                     .append("-&nbsp;&nbsp;")
                     .append(name)
                     .append("</a><span style='color:grey;padding-left:10px;font-size:10px;'>" + len + "</span><span op='del' class='del'>X</span></li>\r\n");
