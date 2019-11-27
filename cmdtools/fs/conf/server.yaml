@@ -11,6 +11,8 @@ reader:
     chunkedSize: 8192
 writer:
   bufferSize: 8192
+  # 指向读服务器地址，用于下载文件
+  readerServer: http://localhost:8000
   server:
     #为应对多网卡所以采用地址法
     listen: localhost:8080

@@ -86,9 +86,7 @@ $(document).ready(function(){
         e.preventDefault();
         e.stopPropagation();
         var file=$(this).attr('href');
-        $.get('/fs/file',{path:file},function(html){
-            $('.fs-content').html(html);
-        });
+        window.location.href=file;
     });
 
     $('.fs-content').undelegate('li[type]','mouseenter mouseleave');

@@ -19,6 +19,13 @@ import static io.netty.handler.codec.http.HttpResponseStatus.OK;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 
 public class ListFilePage implements IPage {
+    private final IServerConfig config;
+
+
+    public ListFilePage(IServerConfig config) {
+        this.config=config;
+    }
+
     @Override
     public String path() {
         return "/fs/list/";
@@ -72,8 +79,9 @@ public class ListFilePage implements IPage {
         }
         for (String name : fileSystem.listFile(dirPath)) {
             String len = getFileLength(fileSystem, name);
+            String readerUrl=String.format("%s%s",config.writerReaderServer(),name);
             buf.append("<li type='f' style='list-style: none;'><a file style='text-decoration: none; ' href=\"")
-                    .append(name)
+                    .append(readerUrl)
                     .append(qs)
                     .append("\">")
                     .append("-&nbsp;&nbsp;")

@@ -72,7 +72,7 @@ public class Gateway implements IServiceProvider{
         iucPorts = new DefaultUCPorts(this);
         controller = new DefaultReadAccessController(this);
         pages=new HashMap<>();
-        IPage list=new ListFilePage();
+        IPage list=new ListFilePage(config);
         pages.put(list.path(),list);
         IPage login=new LoginPage();
         pages.put(login.path(), login);

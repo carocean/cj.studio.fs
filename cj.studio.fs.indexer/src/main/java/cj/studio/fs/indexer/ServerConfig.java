@@ -5,18 +5,17 @@ import org.yaml.snakeyaml.Yaml;
 
 import java.io.FileReader;
 import java.io.IOException;
-import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
 public class ServerConfig implements IServerConfig {
-    private int chunkedSize;
-    private int workThreadCount;
-    private boolean ssl;
-    private int port;
-    private String ip;
+    private int readerServerChunkedSize;
+    private int readerServerWorkThreadCount;
+    private boolean readerServerSSL;
+    private int readerServerPort;
+    private String readerServerIP;
     private String dataDir;
-    private int bufferSize;
+    private int readerServerBufferSize;
     private int uc_maxIdleConnections;
     private long uc_keepAliveDuration;
     private long uc_readTimeout;
@@ -26,7 +25,16 @@ public class ServerConfig implements IServerConfig {
     private String rbacStrategy;
     private List<String> rbacACL;
     private boolean rbacForceToken;
-
+    private String writerReaderServer;
+    private int writerServerBufferSize;
+    private int writerServerWorkThreadCount;
+    private boolean writerServerSSL;
+    private String writerServerIP;
+    private int writerServerPort;
+    @Override
+    public String writerReaderServer() {
+        return writerReaderServer;
+    }
 
     @Override
     public String rbacStrategy() {
@@ -75,32 +83,32 @@ public class ServerConfig implements IServerConfig {
 
     @Override
     public int bufferSize() {
-        return bufferSize;
+        return readerServerBufferSize;
     }
 
     @Override
     public String readerServerIP() {
-        return ip;
+        return readerServerIP;
     }
 
     @Override
     public int readerServerPort() {
-        return port;
+        return readerServerPort;
     }
 
     @Override
     public boolean readerServerSSL() {
-        return ssl;
+        return readerServerSSL;
     }
 
     @Override
     public int readerServerWorkThreadCount() {
-        return workThreadCount;
+        return readerServerWorkThreadCount;
     }
 
     @Override
     public int chunkedSize() {
-        return chunkedSize;
+        return readerServerChunkedSize;
     }
 
     public static IServerConfig load(String yamlFile) throws IOException {
@@ -118,6 +126,26 @@ public class ServerConfig implements IServerConfig {
         ServerConfig config = new ServerConfig();
         String dataDir = (String) info.get("dataDir");
         Map<String, Object> reader = (Map<String, Object>) info.get("reader");
+        Map<String, Object> writer = (Map<String, Object>) info.get("writer");
+        parseWriterServer(config,writer);
+        parseReaderServer(config, reader);
+        config.dataDir(dataDir);
+        Map<String, Object> ucs =(Map<String, Object>) info.get("ucs");
+        config.uc_connectTimeout=Long.valueOf(ucs.get("connectTimeout")+"");
+        config.uc_keepAliveDuration=Long.valueOf(ucs.get("keepAliveDuration")+"");
+        config.uc_writeTimeout=Long.valueOf(ucs.get("writeTimeout")+"");
+        config.uc_maxIdleConnections=(int)ucs.get("maxIdleConnections");
+        config.uc_readTimeout=Long.valueOf(ucs.get("readTimeout")+"");
+        config.ucAddresses = (List<String>) ucs.get("addresses");
+
+        Map<String, Object> rbac = (Map<String, Object>) info.get("rbac");
+        config.rbacStrategy =(String) rbac.get("strategy");
+        config.rbacACL = (List<String>) rbac.get("acl");
+        config.rbacForceToken = (boolean) rbac.get("forceToken");
+        return config;
+    }
+
+    private static void parseReaderServer(ServerConfig config, Map<String, Object> reader) {
         Map<String, Object> server = (Map<String, Object>) reader.get("server");
         String listen = (String) server.get("listen");
         if (Utils.isEmpty(listen)) {
@@ -137,20 +165,57 @@ public class ServerConfig implements IServerConfig {
         config.readerServerWorkThreadCount((int) server.get("workThreadCount"));
         config.readerServerChunkedSize((int) server.get("chunkedSize"));
         config.readerServerBufferSize((int) reader.get("bufferSize"));
-        config.dataDir(dataDir);
-        Map<String, Object> ucs =(Map<String, Object>) info.get("ucs");
-        config.uc_connectTimeout=Long.valueOf(ucs.get("connectTimeout")+"");
-        config.uc_keepAliveDuration=Long.valueOf(ucs.get("keepAliveDuration")+"");
-        config.uc_writeTimeout=Long.valueOf(ucs.get("writeTimeout")+"");
-        config.uc_maxIdleConnections=(int)ucs.get("maxIdleConnections");
-        config.uc_readTimeout=Long.valueOf(ucs.get("readTimeout")+"");
-        config.ucAddresses = (List<String>) ucs.get("addresses");
+    }
 
-        Map<String, Object> rbac = (Map<String, Object>) info.get("rbac");
-        config.rbacStrategy =(String) rbac.get("strategy");
-        config.rbacACL = (List<String>) rbac.get("acl");
-        config.rbacForceToken = (boolean) rbac.get("forceToken");
-        return config;
+    private static void parseWriterServer(ServerConfig config, Map<String, Object> writer) {
+        Map<String, Object> server = (Map<String, Object>) writer.get("server");
+        String listen = (String) server.get("listen");
+        if (Utils.isEmpty(listen)) {
+            throw new RuntimeException("侦听地址为空");
+        }
+        int pos = listen.indexOf(":");
+        String ip = "";
+        int port = 0;
+        if (pos < 0) {
+            throw new RuntimeException("侦听地址错误");
+        }
+        ip = listen.substring(0, pos);
+        port = Integer.valueOf(listen.substring(pos + 1, listen.length()));
+        config.writerServerIP(ip);
+        config.writerServerPort(port);
+        config.writerServerSSL((boolean) server.get("ssl"));
+        config.writerServerWorkThreadCount((int) server.get("workThreadCount"));
+        config.writerServerChunkedSize((int) server.get("chunkedSize"));
+        config.writerServerBufferSize((int) writer.get("bufferSize"));
+        config.writerReaderServer((String)writer.get("readerServer"));
+    }
+
+    private void writerReaderServer(String readerServer) {
+        this.writerReaderServer=readerServer;
+    }
+
+    private void writerServerBufferSize(int bufferSize) {
+        this.writerServerBufferSize=bufferSize;
+    }
+
+    private void writerServerChunkedSize(int chunkedSize) {
+        this.writerServerBufferSize=chunkedSize;
+    }
+
+    private void writerServerWorkThreadCount(int workThreadCount) {
+        this.writerServerWorkThreadCount=workThreadCount;
+    }
+
+    private void writerServerSSL(boolean ssl) {
+        this.writerServerSSL=ssl;
+    }
+
+    private void writerServerPort(int port) {
+        this.writerServerPort=port;
+    }
+
+    private void writerServerIP(String ip) {
+        this.writerServerIP=ip;
     }
 
     @Override
@@ -159,7 +224,7 @@ public class ServerConfig implements IServerConfig {
     }
 
     private void readerServerBufferSize(int bufferSize) {
-        this.bufferSize=bufferSize;
+        this.readerServerBufferSize =bufferSize;
     }
 
     private void dataDir(String dataDir) {
@@ -167,22 +232,22 @@ public class ServerConfig implements IServerConfig {
     }
 
     private void readerServerChunkedSize(int chunkedSize) {
-        this.chunkedSize = chunkedSize;
+        this.readerServerChunkedSize = chunkedSize;
     }
 
     private void readerServerWorkThreadCount(int workThreadCount) {
-        this.workThreadCount = workThreadCount;
+        this.readerServerWorkThreadCount = workThreadCount;
     }
 
     private void readerServerSSL(boolean ssl) {
-        this.ssl = ssl;
+        this.readerServerSSL = ssl;
     }
 
     private void readerServerPort(int port) {
-        this.port = port;
+        this.readerServerPort = port;
     }
 
     private void readerServerIP(String ip) {
-        this.ip = ip;
+        this.readerServerIP = ip;
     }
 }

@@ -30,6 +30,8 @@ public interface IServerConfig {
 
     List<String> ucAddresses();
 
+    String writerReaderServer();
+
     String rbacStrategy();
 
     List<String> rbacACL();
