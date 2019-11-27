@@ -27,7 +27,9 @@ import io.netty.handler.codec.http.*;
 import io.netty.util.CharsetUtil;
 
 import javax.activation.MimetypesFileTypeMap;
+import java.io.IOException;
 import java.net.URLDecoder;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
@@ -82,7 +84,7 @@ import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
  *
  * </pre>
  */
-public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
+public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<HttpObject> {
 
     public static final String HTTP_DATE_FORMAT = "EEE, dd MMM yyyy HH:mm:ss zzz";
     public static final String HTTP_DATE_GMT_TIMEZONE = "GMT";
@@ -90,7 +92,8 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
     FileSystem fileSystem;
     IServerConfig config;
     IAccessController controller;
-
+    IFileReader reader = null;
+    HttpRequest request;
     public HttpStaticFileServerHandler(IServiceProvider site) {
         this.config = (IServerConfig) site.getService("$.config");
         fileSystem = (FileSystem) site.getService("$.fileSystem");
@@ -98,7 +101,41 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
     }
 
     @Override
-    public void messageReceived(ChannelHandlerContext ctx, FullHttpRequest request) throws Exception {
+    public void channelActive(ChannelHandlerContext ctx) throws Exception {
+        super.channelActive(ctx);
+    }
+
+    @Override
+    public void messageReceived(ChannelHandlerContext ctx, HttpObject obj) throws Exception {
+        if (obj instanceof HttpRequest) {
+            this.request=(HttpRequest)obj;
+            doHttpRequest(ctx, request);
+            return;
+        }
+        if (obj instanceof LastHttpContent) {
+            ChannelFuture lastContentFuture;
+            byte[] buf = new byte[config.chunkedSize()];
+            int readlen = 0;
+            while (true) {
+                readlen = reader.read(buf, 0, buf.length);
+                if (readlen < 0) {
+                    break;
+                }
+                ByteBuf bb = ctx.alloc().buffer(readlen);
+                bb.writeBytes(buf, 0, readlen);
+                HttpContent content = new DefaultHttpContent(bb);
+                ctx.writeAndFlush(content);
+            }
+            lastContentFuture = ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
+            if (!HttpHeaderUtil.isKeepAlive(request)) {
+                lastContentFuture.addListener(ChannelFutureListener.CLOSE);
+            }
+            this.request=null;
+        }
+
+    }
+
+    private void doHttpRequest(ChannelHandlerContext ctx, HttpRequest request) throws IOException, ParseException {
         if (!request.decoderResult().isSuccess()) {
             sendError(ctx, BAD_REQUEST);
             return;
@@ -109,7 +146,7 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
             return;
         }
 
-         String uri = request.uri();
+        String uri = request.uri();
         uri = URLDecoder.decode(uri, "utf-8");
         final String path = Utils.getPathWithoutQuerystring(uri);
         if (path == null) {
@@ -130,24 +167,6 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
                 appid = Utils.getAppidFromCookie(request);
             }
         }
-        if (fileSystem.isDirectory(path)) {
-            if (config.rbacForceToken() && !controller.hasListRights(uri, appid, accessToken)) {
-                sendError(ctx, FORBIDDEN);
-                return;
-            }
-            if (path.endsWith("/")) {
-                sendListing(ctx, path, appid, accessToken);
-            } else {
-                String qs = Utils.getQuerystring(uri);
-                if (Utils.isEmpty(qs)) {
-                    sendRedirect(ctx, path + '/');
-                } else {
-                    sendRedirect(ctx, path + "/?" + qs);
-                }
-
-            }
-            return;
-        }
 
         if (!fileSystem.isFile(path)) {
             sendError(ctx, FORBIDDEN);
@@ -157,14 +176,14 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
             sendError(ctx, FORBIDDEN);
             return;
         }
-        IFileReader reader = null;
+
         try {
             reader = fileSystem.openReader(path);
         } catch (Exception e) {
             sendError(ctx, NOT_FOUND);
             return;
         }
-        // Cache Validation
+//        // Cache Validation
         String ifModifiedSince = request.headers().getAndConvert(IF_MODIFIED_SINCE);
         if (ifModifiedSince != null && !ifModifiedSince.isEmpty()) {
             SimpleDateFormat dateFormatter = new SimpleDateFormat(HTTP_DATE_FORMAT, Locale.US);
@@ -178,8 +197,15 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
             }
         }
 
-        long fileLength = reader.length();
-
+        long fileLength = 0;
+        try {
+            fileLength = reader.length();
+        } catch (Exception e) {
+            e.printStackTrace();
+            HttpResponseStatus status = HttpResponseStatus.parseLine("500 " + e);
+            sendError(ctx, status);
+            return;
+        }
         HttpResponse response = new DefaultHttpResponse(HTTP_1_1, OK);
         HttpHeaderUtil.setContentLength(response, fileLength);
         setContentTypeHeader(response, Utils.getFileName(path));
@@ -187,30 +213,9 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
         if (HttpHeaderUtil.isKeepAlive(request)) {
             response.headers().set(CONNECTION, HttpHeaderValues.KEEP_ALIVE);
         }
-
-        ctx.write(response);
-
-        ChannelFuture lastContentFuture;
-
-        byte[] buf = new byte[config.bufferSize()];
-        int readlen = 0;
-        while (true) {
-            readlen = reader.read(buf, 0, buf.length);
-            if (readlen < 0) {
-                break;
-            }
-            ByteBuf bb = Unpooled.buffer();
-            bb.writeBytes(buf, 0, readlen);
-            HttpContent content = new DefaultHttpContent(bb);
-            ctx.write(content);
-        }
-        reader.close();
-        lastContentFuture = ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
+        ctx.writeAndFlush(response);
 
 
-        if (!HttpHeaderUtil.isKeepAlive(request)) {
-            lastContentFuture.addListener(ChannelFutureListener.CLOSE);
-        }
     }
 
     @Override
@@ -221,61 +226,6 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
         }
     }
 
-
-    private void sendListing(ChannelHandlerContext ctx, String dirPath, String appid, String token) {
-        String qs = String.format("?App-ID=%s&Access-Token=%s", appid, token);
-        FullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, OK);
-        response.headers().set(CONTENT_TYPE, "text/html; charset=UTF-8");
-
-        StringBuilder buf = new StringBuilder()
-                .append("<!DOCTYPE html>\r\n")
-                .append("<html><head><title>")
-                .append("Listing of: ")
-                .append(dirPath)
-                .append("</title></head><body>\r\n")
-
-                .append("<h3>Listing of: ")
-                .append(dirPath)
-                .append("</h3>\r\n")
-
-                .append("<ul>")
-                .append(String.format("<li  style='list-style: none;'><a style='text-decoration: none; ' href=\"../%s\">..</a></li>\r\n", qs));
-
-        for (String name : fileSystem.listDir(dirPath)) {
-            buf.append("<li style='list-style: none;'><a style='text-decoration: none; ' href=\"")
-                    .append(name)
-                    .append(qs)
-                    .append("\">")
-                    .append("+&nbsp;&nbsp;")
-                    .append(name)
-                    .append("</a></li>\r\n");
-        }
-        for (String name : fileSystem.listFile(dirPath)) {
-            buf.append("<li  style='list-style: none;'><a style='text-decoration: none; ' href=\"")
-                    .append(name)
-                    .append(qs)
-                    .append("\">")
-                    .append("-&nbsp;&nbsp;")
-                    .append(name)
-                    .append("</a></li>\r\n");
-        }
-
-        buf.append("</ul></body></html>\r\n");
-        ByteBuf buffer = Unpooled.copiedBuffer(buf, CharsetUtil.UTF_8);
-        response.content().writeBytes(buffer);
-        buffer.release();
-
-        // Close the connection as soon as the error message is sent.
-        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-    }
-
-    private void sendRedirect(ChannelHandlerContext ctx, String newUri) {
-        FullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, FOUND);
-        response.headers().set(LOCATION, newUri);
-
-        // Close the connection as soon as the error message is sent.
-        ctx.writeAndFlush(response).addListener(ChannelFutureListener.CLOSE);
-    }
 
     private void sendError(ChannelHandlerContext ctx, HttpResponseStatus status) {
         FullHttpResponse response = new DefaultFullHttpResponse(

@@ -124,7 +124,7 @@ public class Utils {
         return parseQueryString(uri).get("Access-Token");
     }
 
-    public static String getTokenFromCookie(FullHttpRequest request) {
+    public static String getTokenFromCookie(HttpRequest request) {
         String value = request.headers().getAndConvert(HttpHeaderNames.COOKIE);
         if (Utils.isEmpty(value)) {
             return "";
@@ -138,7 +138,7 @@ public class Utils {
         return "";
     }
 
-    public static String getAppidFromCookie(FullHttpRequest request) {
+    public static String getAppidFromCookie(HttpRequest request) {
         String value = request.headers().getAndConvert(HttpHeaderNames.COOKIE);
         if (Utils.isEmpty(value)) {
             return "";

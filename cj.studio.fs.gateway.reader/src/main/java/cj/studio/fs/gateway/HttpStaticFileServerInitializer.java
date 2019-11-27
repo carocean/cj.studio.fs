@@ -48,7 +48,6 @@ public class HttpStaticFileServerInitializer extends ChannelInitializer<SocketCh
             pipeline.addLast(sslCtx.newHandler(ch.alloc()));
         }
         pipeline.addLast(new HttpServerCodec());
-        pipeline.addLast(new HttpObjectAggregator(65536));
         pipeline.addLast(new ChunkedWriteHandler());
         pipeline.addLast(new HttpStaticFileServerHandler(site));
     }
