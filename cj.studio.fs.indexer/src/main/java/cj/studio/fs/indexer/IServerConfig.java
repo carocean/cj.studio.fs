@@ -16,8 +16,6 @@ public interface IServerConfig {
 
     int chunkedSize();
 
-    int bufferSize();
-
     int uc_maxIdleConnections();
 
     long uc_keepAliveDuration();
@@ -39,7 +37,6 @@ public interface IServerConfig {
     String writerServerIP();
 
 
-    int writerServerBufferSize();
 
     int writerServerPort();
 

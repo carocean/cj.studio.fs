@@ -38,6 +38,8 @@ public class FileSystem implements IDirectory {
 //                .enableEncryption("password", false)
                 .disableLocking()
                 .disableTransactions()
+                .disableCache()
+                .disableCacheAutoClear()
                 .useRandomAccessFile()
                 .make();
         if (!db.getCollections().containsKey("/")) {

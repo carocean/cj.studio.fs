@@ -157,15 +157,16 @@ public class DefaultReadAccessController implements IAccessController {
         }
         String uid = (String) info.get("sub");
         for (ACE e : selfACEs) {
-            if (e.url.startsWith(uri)) {
-                String furl = String.format("%s%s", uri.endsWith("/") ? uri : uri + "/", uid);
-                if (e.url.startsWith(furl)) {
+            if (uri.startsWith(e.url)) {
+                String furl = String.format("%s%s", e.url.endsWith("/") ? e.url : e.url + "/", uid);
+                if (uri.startsWith(furl)) {
                     if (e.action.equals("read") && e.command.equals("allow")) {
                         return true;
                     }
                     //由于该类主要检查读的，所以写被直接拒绝
                     return false;
                 }
+                return false;
             }
         }
         for (ACE e : reads) {
@@ -248,15 +249,16 @@ public class DefaultReadAccessController implements IAccessController {
         }
         String uid = (String) info.get("sub");
         for (ACE e : selfACEs) {
-            if (e.url.startsWith(uri)) {
-                String furl = String.format("%s%s", uri.endsWith("/") ? uri : uri + "/", uid);
-                if (e.url.startsWith(furl)) {
+            if (uri.startsWith(e.url)) {
+                String furl = String.format("%s%s", e.url.endsWith("/") ? e.url : e.url + "/", uid);
+                if (uri.startsWith(furl)) {
                     if (e.action.equals("read") && e.command.equals("allow")) {
                         return true;
                     }
                     //由于该类主要检查读的，所以写被直接拒绝
                     return false;
                 }
+                return false;
             }
         }
         for (ACE e : reads) {

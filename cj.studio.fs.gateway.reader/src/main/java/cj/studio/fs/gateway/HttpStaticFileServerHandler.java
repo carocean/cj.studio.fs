@@ -17,6 +17,7 @@ package cj.studio.fs.gateway;
 
 import cj.studio.fs.indexer.*;
 import cj.studio.fs.indexer.util.Utils;
+import com.google.gson.Gson;
 import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.ChannelFuture;
@@ -94,6 +95,9 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
     IAccessController controller;
     IFileReader reader = null;
     HttpRequest request;
+    private boolean isListCommand;
+
+
     public HttpStaticFileServerHandler(IServiceProvider site) {
         this.config = (IServerConfig) site.getService("$.config");
         fileSystem = (FileSystem) site.getService("$.fileSystem");
@@ -109,22 +113,25 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
     public void messageReceived(ChannelHandlerContext ctx, HttpObject obj) throws Exception {
         if (obj instanceof HttpRequest) {
             this.request=(HttpRequest)obj;
+            this.isListCommand=false;
             doHttpRequest(ctx, request);
             return;
         }
         if (obj instanceof LastHttpContent) {
             ChannelFuture lastContentFuture;
-            byte[] buf = new byte[config.chunkedSize()];
-            int readlen = 0;
-            while (true) {
-                readlen = reader.read(buf, 0, buf.length);
-                if (readlen < 0) {
-                    break;
+            if(!isListCommand) {
+                byte[] buf = new byte[config.chunkedSize()];
+                int readlen = 0;
+                while (true) {
+                    readlen = reader.read(buf, 0, buf.length);
+                    if (readlen < 0) {
+                        break;
+                    }
+                    ByteBuf bb = ctx.alloc().buffer(readlen);
+                    bb.writeBytes(buf, 0, readlen);
+                    HttpContent content = new DefaultHttpContent(bb);
+                    ctx.writeAndFlush(content);
                 }
-                ByteBuf bb = ctx.alloc().buffer(readlen);
-                bb.writeBytes(buf, 0, readlen);
-                HttpContent content = new DefaultHttpContent(bb);
-                ctx.writeAndFlush(content);
             }
             lastContentFuture = ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
             if (!HttpHeaderUtil.isKeepAlive(request)) {
@@ -169,6 +176,11 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
         }
 
         if (!fileSystem.isFile(path)) {
+            String list = params == null ? null : params.get("list");
+            if("/".equals(path)&&!Utils.isEmpty(list)){
+                listDir(ctx, list,appid,accessToken);
+                return;
+            }
             sendError(ctx, FORBIDDEN);
             return;
         }
@@ -216,6 +228,34 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
         ctx.writeAndFlush(response);
 
 
+    }
+
+    private void listDir(ChannelHandlerContext ctx, String path,String appid,String accessToken) {
+        this.isListCommand=true;
+        if (!fileSystem.existsDir(path)) {
+            sendError(ctx, NOT_FOUND);
+            return;
+        }
+        if(config.rbacForceToken()&&!controller.hasListRights(path,appid,accessToken)){
+            sendError(ctx, FORBIDDEN);
+            return;
+        }
+
+        Map<String, String> data = new HashMap<>();
+        List<String> dirs=fileSystem.listDir(path);
+        List<String> files=fileSystem.listFile(path);
+        for (String d : dirs) {
+            data.put(d, "d");
+        }
+        for (String f : files) {
+            data.put(f, "f");
+        }
+        ResponseClient rc = new ResponseClient(200,"ok",new Gson().toJson(data));
+        IPageContext context= new DefaultPageContext(fileSystem,ctx,request,null);
+        StringBuilder builder = new StringBuilder();
+        builder.append(new Gson().toJson(rc));
+        context.writeResponse(ctx.channel(),builder);
+        context.dispose();
     }
 
     @Override

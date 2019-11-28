@@ -15,7 +15,6 @@ public class ServerConfig implements IServerConfig {
     private int readerServerPort;
     private String readerServerIP;
     private String dataDir;
-    private int readerServerBufferSize;
     private int uc_maxIdleConnections;
     private long uc_keepAliveDuration;
     private long uc_readTimeout;
@@ -26,7 +25,6 @@ public class ServerConfig implements IServerConfig {
     private List<String> rbacACL;
     private boolean rbacForceToken;
     private String writerReaderServer;
-    private int writerServerBufferSize;
     private int writerServerWorkThreadCount;
     private boolean writerServerSSL;
     private String writerServerIP;
@@ -82,11 +80,6 @@ public class ServerConfig implements IServerConfig {
     @Override
     public String dataDir() {
         return dataDir;
-    }
-
-    @Override
-    public int bufferSize() {
-        return readerServerBufferSize;
     }
 
     @Override
@@ -168,7 +161,6 @@ public class ServerConfig implements IServerConfig {
         config.readerServerSSL((boolean) server.get("ssl"));
         config.readerServerWorkThreadCount((int) server.get("workThreadCount"));
         config.readerServerChunkedSize((int) server.get("chunkedSize"));
-        config.readerServerBufferSize((int) reader.get("bufferSize"));
     }
 
     private static void parseWriterServer(ServerConfig config, Map<String, Object> writer) {
@@ -190,7 +182,6 @@ public class ServerConfig implements IServerConfig {
         config.writerServerSSL((boolean) server.get("ssl"));
         config.writerServerWorkThreadCount((int) server.get("workThreadCount"));
         config.writerServerChunkedSize((int) server.get("chunkedSize"));
-        config.writerServerBufferSize((int) writer.get("bufferSize"));
         config.writerReaderServer((String) writer.get("readerServer"));
     }
 
@@ -199,10 +190,6 @@ public class ServerConfig implements IServerConfig {
         return writerServerIP;
     }
 
-    @Override
-    public int writerServerBufferSize() {
-        return writerServerBufferSize;
-    }
 
     @Override
     public int writerServerPort() {
@@ -228,9 +215,6 @@ public class ServerConfig implements IServerConfig {
         this.writerReaderServer = readerServer;
     }
 
-    private void writerServerBufferSize(int bufferSize) {
-        this.writerServerBufferSize = bufferSize;
-    }
 
     private void writerServerChunkedSize(int chunkedSize) {
         this.writerServerChunkedSize = chunkedSize;
@@ -257,9 +241,6 @@ public class ServerConfig implements IServerConfig {
         return rbacForceToken;
     }
 
-    private void readerServerBufferSize(int bufferSize) {
-        this.readerServerBufferSize = bufferSize;
-    }
 
     private void dataDir(String dataDir) {
         this.dataDir = dataDir;

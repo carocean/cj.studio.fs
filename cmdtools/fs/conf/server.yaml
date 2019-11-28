@@ -2,7 +2,6 @@
 #数据目录，如果以/开头则是绝对路径，否则视为在文件程序的根目录中找
 dataDir: /Users/caroceanjofers/Downloads/test/
 reader:
-  bufferSize: 8192
   server:
     #为应对多网卡所以采用地址法
     listen: localhost:8000
@@ -10,7 +9,6 @@ reader:
     workThreadCount: 10
     chunkedSize: 8192
 writer:
-  bufferSize: 8192
   # 指向读服务器地址，用于下载文件
   readerServer: http://localhost:8000
   server:
@@ -42,14 +40,14 @@ rbac:
   # acl一般用于对/public和/protect目录的访问权限，同样对于/self可以将其开放给他人。
   # 注意self限制将使分享的人无法打开分享者的图片,因为受其令牌的身份限制。因此平台暂不考虑self的实现
   acl:
-    - allow *@users read /lib unlimit token
+    - allow *@users read /public unlimit token
     # 所有的用户共享读，这是危险的，但是由于不授权list权限，窃取者需要知道对方的文件名才可取出，因此多数被规避。
     # 但如果采用self就需要用自己的token生成一个分享token并给对方才可让对方读取，这使用起来太多不便。
     # 目前阿里云也仅仅是给第三方一个key，让第三方为资源生成令牌，在访问阿里云oss时也仅仅认证了是否是授信的第三方访问，
     # 如果是则第三方的应用可以访问所有第三方的资源，并没有为第三方的个人用户做资源保护。所以如果第四方想访问第三方肯定会被禁止，但在第三方内用户之间的文件没有私密
-    - deny *@users read /protected/users limit token
+    - allow *@users read /users limit token by self
     # slef说明充许用户只能写/protected/users目录下其用户名作为子目录的目录，不能跨目录访问
-    - allow *@users write /protected/users limit token by self
+    - allow *@users write /users limit token by self
     - allow tenantDevelops@ucroles read / limit token
     - allow tenantDevelops@ucroles write / limit token
     - allow tenantDevelops@ucroles list / limit token
