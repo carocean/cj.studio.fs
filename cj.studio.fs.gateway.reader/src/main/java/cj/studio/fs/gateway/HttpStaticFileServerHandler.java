@@ -95,7 +95,6 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
     IAccessController controller;
     IFileReader reader = null;
     HttpRequest request;
-    private boolean isListCommand;
 
 
     public HttpStaticFileServerHandler(IServiceProvider site) {
@@ -113,13 +112,12 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
     public void messageReceived(ChannelHandlerContext ctx, HttpObject obj) throws Exception {
         if (obj instanceof HttpRequest) {
             this.request=(HttpRequest)obj;
-            this.isListCommand=false;
             doHttpRequest(ctx, request);
             return;
         }
         if (obj instanceof LastHttpContent) {
             ChannelFuture lastContentFuture;
-            if(!isListCommand) {
+            if(reader!=null) {
                 byte[] buf = new byte[config.chunkedSize()];
                 int readlen = 0;
                 while (true) {
@@ -231,7 +229,6 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
     }
 
     private void listDir(ChannelHandlerContext ctx, String path,String appid,String accessToken) {
-        this.isListCommand=true;
         if (!fileSystem.existsDir(path)) {
             sendError(ctx, NOT_FOUND);
             return;
