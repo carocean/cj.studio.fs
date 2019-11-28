@@ -4,16 +4,18 @@ dataDir: /Users/caroceanjofers/Downloads/test/
 reader:
   server:
     #为应对多网卡所以采用地址法
-    listen: localhost:8000
+    # 注：在docker里运行去掉地址中的localhost，否则外部访问不了
+    listen: :7100
     ssl: false
     workThreadCount: 10
     chunkedSize: 8192
 writer:
   # 指向读服务器地址，用于下载文件
-  readerServer: http://localhost:8000
+  readerServer: http://localhost:7100
   server:
     #为应对多网卡所以采用地址法
-    listen: localhost:8080
+    # 注：在docker里运行去掉地址中的localhost，否则外部访问不了
+    listen: :7110
     ssl: false
     workThreadCount: 10
     chunkedSize: 8192
