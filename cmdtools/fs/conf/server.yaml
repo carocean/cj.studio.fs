@@ -15,9 +15,8 @@ reader:
 writer:
   # 指向读服务器地址，用于下载文件
   #http://47.105.165.186:7100
-  #http://172.31.210.93:7100
   #http://localhost:7100
-  readerServer: http://172.31.210.93:7100
+  readerServer: http://47.105.165.186:7100
   server:
     #为应对多网卡所以采用地址法
     # 注：在docker里运行去掉地址中的localhost，否则外部访问不了
