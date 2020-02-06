@@ -3,7 +3,7 @@ package cj.studio.fs.indexer;
 import java.util.Map;
 
 public interface IUCPorts {
-    Map<String, Object> verifyToken(String appid, String token);
+    Map<String, Object> verifyToken(String accessToken);
 
-    Map<String, Object> auth(String appid, String accountName, String password);
+    Map<String, Object> auth( String accountCode, String password);
 }

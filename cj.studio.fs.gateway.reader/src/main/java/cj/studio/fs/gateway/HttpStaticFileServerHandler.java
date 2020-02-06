@@ -26,6 +26,7 @@ import io.netty.channel.ChannelHandlerContext;
 import io.netty.channel.SimpleChannelInboundHandler;
 import io.netty.handler.codec.http.*;
 import io.netty.util.CharsetUtil;
+import org.apache.log4j.Logger;
 
 import javax.activation.MimetypesFileTypeMap;
 import java.io.IOException;
@@ -86,7 +87,7 @@ import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
  * </pre>
  */
 public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<HttpObject> {
-
+    private static final Logger logger = Logger.getLogger(HttpStaticFileServerHandler.class.getName());
     public static final String HTTP_DATE_FORMAT = "EEE, dd MMM yyyy HH:mm:ss zzz";
     public static final String HTTP_DATE_GMT_TIMEZONE = "GMT";
     public static final int HTTP_CACHE_SECONDS = 60;
@@ -160,36 +161,47 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
         }
         Map<String, String> params = null;
         String accessToken = "";
-        String appid = "";
         if (config.rbacForceToken()) {
             params = Utils.parseQueryString(uri);
-            accessToken = params.get("Access-Token");
-            if (Utils.isEmpty(accessToken)) {
-                accessToken = Utils.getTokenFromCookie(request);
+            String cookieSeq = request.headers().getAndConvert(HttpHeaderNames.COOKIE);
+            Map<String, String> map = new HashMap<>();
+            if (cookieSeq != null) {
+                Set<Cookie> cookies = ServerCookieDecoder.decode(cookieSeq);
+                for (Cookie cookie : cookies) {
+                    map.put(cookie.name(), cookie.value());
+                }
             }
-            appid = params.get("App-ID");
-            if (Utils.isEmpty(appid)) {
-                appid = Utils.getAppidFromCookie(request);
-            }
+            accessToken =map.get("accessToken");
+
         }
 
         if (!fileSystem.isFile(path)) {
             String list = params == null ? null : params.get("list");
             if("/".equals(path)&&!Utils.isEmpty(list)){
-                listDir(ctx, list,appid,accessToken);
+                listDir(ctx, list,accessToken);
                 return;
             }
             sendError(ctx, FORBIDDEN);
             return;
         }
-        if (config.rbacForceToken() && !controller.hasReadRights(uri, appid, accessToken)) {
-            sendError(ctx, FORBIDDEN);
+        try {
+            if (config.rbacForceToken() && !controller.hasReadRights(uri, accessToken)) {
+                sendError(ctx, FORBIDDEN);
+                return;
+            }
+        } catch (AccessTokenExpiredException e) {
+            logger.error(e);
+            sendError(ctx, HttpResponseStatus.parseLine("1002 AccessToken is Expired"));
             return;
+        } catch (Throwable e) {
+            logger.error(e);
+            sendError(ctx, EXPECTATION_FAILED);
         }
 
         try {
             reader = fileSystem.openReader(path);
         } catch (Exception e) {
+            logger.error(e);
             sendError(ctx, NOT_FOUND);
             return;
         }
@@ -211,8 +223,8 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
         try {
             fileLength = reader.length();
         } catch (Exception e) {
-            e.printStackTrace();
-            HttpResponseStatus status = HttpResponseStatus.parseLine("500 " + e);
+            logger.error(e);
+            HttpResponseStatus status = HttpResponseStatus.parseLine("500 Fail to fetch file length.");
             sendError(ctx, status);
             return;
         }
@@ -228,12 +240,12 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
 
     }
 
-    private void listDir(ChannelHandlerContext ctx, String path,String appid,String accessToken) {
+    private void listDir(ChannelHandlerContext ctx, String path,String accessToken) {
         if (!fileSystem.existsDir(path)) {
             sendError(ctx, NOT_FOUND);
             return;
         }
-        if(config.rbacForceToken()&&!controller.hasListRights(path,appid,accessToken)){
+        if(config.rbacForceToken()&&!controller.hasListRights(path,accessToken)){
             sendError(ctx, FORBIDDEN);
             return;
         }
@@ -261,6 +273,7 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
         if (ctx.channel().isActive()) {
             sendError(ctx, INTERNAL_SERVER_ERROR);
         }
+        logger.error(cause);
     }
 
 

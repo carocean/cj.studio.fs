@@ -34,8 +34,7 @@ public class ListFilePage implements IPage {
     @Override
     public void doService(IPageContext context) {
         Map<String, String> map = context.cookies();
-        String appid = map.get("App-ID");
-        String token = map.get("Access-Token");
+        String accessToken = map.get("accessToken");
         Map<String, List<String>> params=Utils.parameters(context.request());
         String dirPath = "";
         if(params==null||params.isEmpty()){
@@ -43,7 +42,7 @@ public class ListFilePage implements IPage {
         }
         dirPath = params.get("dir").get(0);
         FileSystem fileSystem = context.fileSystem();
-        String qs = String.format("?App-ID=%s&Access-Token=%s", appid, token);
+        String qs = String.format("?accessToken=%s", accessToken);
         FullHttpResponse response = new DefaultFullHttpResponse(HTTP_1_1, OK);
         response.headers().set(CONTENT_TYPE, "text/html; charset=UTF-8");
         String parentDir = "";

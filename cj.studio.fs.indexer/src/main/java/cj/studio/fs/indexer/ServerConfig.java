@@ -30,7 +30,42 @@ public class ServerConfig implements IServerConfig {
     private String writerServerIP;
     private int writerServerPort;
     private int writerServerChunkedSize;
+    private String appid;
+    private String appKey;
+    private String appSecret;
+    private String device;
+    @Override
+    public String appid() {
+        return appid;
+    }
 
+    public void appid(String appid) {
+        this.appid = appid;
+    }
+    @Override
+    public String appKey() {
+        return appKey;
+    }
+
+    public void appKey(String appKey) {
+        this.appKey = appKey;
+    }
+    @Override
+    public String appSecret() {
+        return appSecret;
+    }
+
+    public void appSecret(String appSecret) {
+        this.appSecret = appSecret;
+    }
+    @Override
+    public String device() {
+        return device;
+    }
+
+    public void device(String device) {
+        this.device = device;
+    }
 
     @Override
     public String writerReaderServer() {
@@ -130,6 +165,10 @@ public class ServerConfig implements IServerConfig {
         Map<String, Object> ucs = (Map<String, Object>) info.get("ucs");
         config.uc_connectTimeout = Long.valueOf(ucs.get("connectTimeout") + "");
         config.uc_keepAliveDuration = Long.valueOf(ucs.get("keepAliveDuration") + "");
+        config.appid=ucs.get("appid") + "";
+        config.appKey=ucs.get("appKey") + "";
+        config.appSecret=ucs.get("appSecret") + "";
+        config.device=ucs.get("device") + "";
         config.uc_writeTimeout = Long.valueOf(ucs.get("writeTimeout") + "");
         config.uc_maxIdleConnections = (int) ucs.get("maxIdleConnections");
         config.uc_readTimeout = Long.valueOf(ucs.get("readTimeout") + "");

@@ -28,6 +28,14 @@ public interface IServerConfig {
 
     List<String> ucAddresses();
 
+    String appid();
+
+    String appKey();
+
+    String appSecret();
+
+    String device();
+
     String writerReaderServer();
 
     String rbacStrategy();

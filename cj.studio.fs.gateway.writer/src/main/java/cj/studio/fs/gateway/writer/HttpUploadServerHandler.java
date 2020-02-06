@@ -28,20 +28,19 @@ import io.netty.handler.codec.http.multipart.HttpPostRequestDecoder.EndOfDataDec
 import io.netty.handler.codec.http.multipart.HttpPostRequestDecoder.ErrorDataDecoderException;
 import io.netty.handler.codec.http.multipart.InterfaceHttpData.HttpDataType;
 import io.netty.util.CharsetUtil;
+import org.apache.log4j.Logger;
 
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.*;
-import java.util.logging.Logger;
 
 import static io.netty.buffer.Unpooled.copiedBuffer;
-import static io.netty.handler.codec.http.HttpHeaderNames.CONTENT_TYPE;
+import static io.netty.handler.codec.http.HttpHeaderNames.*;
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
 
 public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObject> {
-
     private static final Logger logger = Logger.getLogger(HttpUploadServerHandler.class.getName());
 
     private HttpRequest request;
@@ -103,13 +102,13 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
     public void messageReceived(ChannelHandlerContext ctx, HttpObject msg) throws Exception {
         if (msg instanceof HttpRequest) {
             HttpRequest request = this.request = (HttpRequest) msg;
-            IPageContext context = new DefaultPageContext(site, fileSystem, ctx,dir, request, mimes);
+            IPageContext context = new DefaultPageContext(site, fileSystem, ctx, dir, request, mimes);
             if (context.isResource()) {
                 try {
                     context.writeResource(request.uri(), null);
                 } catch (Exception e) {
-                    sendError(ctx, HttpResponseStatus.parseLine(String.format("500 %s", e.getMessage())));
-                    e.printStackTrace();
+                    sendError(ctx,EXPECTATION_FAILED);
+                    logger.error(e);
                 } finally {
                     if (context != null) {
                         context.dispose();
@@ -117,23 +116,23 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
                 }
                 return;
             }
-            boolean isLoginService=request.uri().startsWith("/public/login.service");
-            if (isLoginService||!isLogin(request)) {
+            boolean isLoginService = request.uri().startsWith("/public/login.service");
+            if (isLoginService || !isLogin(request)) {
                 IPage page = Utils.getPage("/public/login.html", pages);
-                if(request.uri().startsWith("/public/login.html")){
+                if (request.uri().startsWith("/public/login.html")) {
                     try {
                         context.writeResource(request.uri(), null);
                     } catch (Exception e) {
-                        sendError(ctx, HttpResponseStatus.parseLine(String.format("500 %s", e.getMessage())));
-                        e.printStackTrace();
+                        sendError(ctx, EXPECTATION_FAILED);
+                        logger.error(e);
                     } finally {
                         if (context != null) {
                             context.dispose();
                         }
                     }
                     return;
-                }else{
-                    if(!isLoginService){
+                } else {
+                    if (!isLoginService) {
                         context.redirect(page.path());
                         return;
                     }
@@ -142,8 +141,9 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
                 try {
                     page.doService(context);
                 } catch (Exception e) {
-                    sendError(ctx, HttpResponseStatus.parseLine(String.format("500 %s", e.getMessage())));
-                    e.printStackTrace();
+//                    sendError(ctx, HttpResponseStatus.parseLine(String.format("500 %s", e.getMessage())));
+                    logger.error(e);
+                    sendError(ctx,SERVICE_UNAVAILABLE);
                 } finally {
                     if (context != null) {
                         context.dispose();
@@ -155,16 +155,27 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
                 context.redirect("/mg/index.html");
                 return;
             }
-
             IPage page = Utils.getPage(request.uri(), pages);
-            if(!(page instanceof UploadPage)) {
+            if (!(page instanceof UploadPage)) {
+                try {
+                    IAccessController controller = (IAccessController) site.getService("$.accessController");
+                    Map<String, String> map = context.cookies();
+                    String accessToken = map.get("accessToken");
+                    if (!controller.hasListRights(context.currentDir(), accessToken)) {
+                        throw new RuntimeException("无目录列表权限");
+                    }
+                } catch (Throwable e) {
+                    logger.error(e);
+                    sendError(ctx, FORBIDDEN);
+                    return;
+                }
                 if (page != null) {
                     try {
                         page.doService(context);
                         return;
                     } catch (Exception e) {
-                        sendError(ctx, HttpResponseStatus.parseLine(String.format("500 %s", e.getMessage())));
-                        e.printStackTrace();
+                        sendError(ctx, FORBIDDEN);
+                        logger.error(e);
                         return;
                     } finally {
                         if (context != null) {
@@ -177,6 +188,23 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
                 }
             }
             //其下处理上传
+            try {
+                //前边已验证通过了，说明accessToken合法，但其是否具有对一些目录的写入权限则需要检查
+                IAccessController controller = (IAccessController) site.getService("$.accessController");
+                Map<String, String> map = context.cookies();
+                String accessToken = map.get("accessToken");
+                if (!controller.hasWriteRights(request.uri(), accessToken)) {
+                    throw new RuntimeException(("无上传权限"));
+                }
+            } catch (AccessTokenExpiredException e) {
+                logger.error(e);
+//                HttpResponseStatus.parseLine(String.format("500 %s", e.getMessage())
+                sendError(ctx, HttpResponseStatus.parseLine("1002 AccessToken is Expired"));
+            } catch (Throwable e) {
+                logger.error(e);
+                sendError(ctx, FORBIDDEN);
+                return;
+            }
             try {
                 decoder = new HttpPostRequestDecoder(factory, request);
             } catch (ErrorDataDecoderException e1) {
@@ -229,9 +257,6 @@ public class HttpUploadServerHandler extends SimpleChannelInboundHandler<HttpObj
         }
         return true;
     }
-
-
-
 
 
     private void reset() {

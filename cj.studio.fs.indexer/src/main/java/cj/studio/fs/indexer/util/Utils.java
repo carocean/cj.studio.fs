@@ -10,6 +10,17 @@ import java.text.DecimalFormat;
 import java.util.*;
 
 public class Utils {
+    public static String getAccessToken(String cookieSeq){
+        Set<Cookie> cookies = ServerCookieDecoder.decode(cookieSeq);
+        String accessToken = "";
+        for (Cookie cookie : cookies) {
+            if ("accessToken".equals(cookie.name())) {
+                accessToken = cookie.value();
+                break;
+            }
+        }
+        return  accessToken;
+    }
     public static String getParentDir(String file) {
         if (Utils.isEmpty(file) || "/".equals(file)) {
             return "";

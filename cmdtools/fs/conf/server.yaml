@@ -1,6 +1,9 @@
 #部署架构：ngnix(1-n)->reader server(1-n)->nas
 #数据目录，如果以/开头则是绝对路径，否则视为在文件程序的根目录中找
-dataDir: /Users/caroceanjofers/Downloads/test/
+#一个云文件系统支撑一个uc应用的文件存储，如果uc（用户中心）多个应用要使用文件系统，则需要建立多个fs服务器，好处是"专业"
+#/filesystem/data
+#/Users/caroceanjofers/Downloads/test/
+dataDir: /filesystem/data
 reader:
   server:
     #为应对多网卡所以采用地址法
@@ -11,7 +14,10 @@ reader:
     chunkedSize: 8192
 writer:
   # 指向读服务器地址，用于下载文件
-  readerServer: http://localhost:7100
+  #http://47.105.165.186:7100
+  #http://172.31.210.93:7100
+  #http://localhost:7100
+  readerServer: http://172.31.210.93:7100
   server:
     #为应对多网卡所以采用地址法
     # 注：在docker里运行去掉地址中的localhost，否则外部访问不了
@@ -21,35 +27,30 @@ writer:
     chunkedSize: 8192
 #用户中心,客户端负载
 ucs:
+  appid: gbera.netos
+  appKey: 92D9F2B8078D039A7405AC0498F71059
+  appSecret: 9402073ADEF6DEEB35E2FDBAC7051471
+  device: fs-browser-device
   maxIdleConnections: 10
   keepAliveDuration: 30000
   readTimeout: 30000
   connectTimeout: 15000
   writeTimeout: 30000
   addresses:
-    - http://47.105.165.186/uc/auth/
-    - http://47.105.165.186/uc/auth/
+    #172.31.210.93
+    #47.105.165.186
+    - http://172.31.210.93:9090/uc/auth.service
+    - http://172.31.210.93:9090/uc/auth.service
 rbac:
-  #策略：固定目录，包括：
-  # /public 完全开放，不需要令牌，一般授权为只读
-  # /protected 受保护的，只要有令牌都可访问，一般授权为只读
-  # /self 仅自己才可访问，一般授权为读写。在myself下目录层级为：/用户/租户/应用/账号，如：http://localhost:8080/test/1.jpg?d=..表示1.jpg在应用目录的test目录下
-  # /protected/users 用户目录,实现/用户/租户/应用/账号层级存储，
+  #default策略，为了简化访问控制策略，定义为：
+  # /system 为系统目录只有指定的角色全权访问
+  # /users/cj 为用户个人目录（fs服务器已设定专为租户的一个应用建立服务，因此账号编号即为唯一），只有他自己具有全权
+  # 除以上目录之外的目录，任何角色都有读写删除的权限，但没有列表权限
   strategy: default
   #强制检查令牌，false表示是开放系统
   forceToken: true
-  # 格式：allow|deny user|role@users|roles read|write|list limit|unlimit self except xx@xx,yy@yy
-  # acl一般用于对/public和/protect目录的访问权限，同样对于/self可以将其开放给他人。
-  # 注意self限制将使分享的人无法打开分享者的图片,因为受其令牌的身份限制。因此平台暂不考虑self的实现
+  # 所以，只需要定义系统目录即可
   acl:
-    - allow *@users read /public unlimit token
-    # 所有的用户共享读，这是危险的，但是由于不授权list权限，窃取者需要知道对方的文件名才可取出，因此多数被规避。
-    # 但如果采用self就需要用自己的token生成一个分享token并给对方才可让对方读取，这使用起来太多不便。
-    # 目前阿里云也仅仅是给第三方一个key，让第三方为资源生成令牌，在访问阿里云oss时也仅仅认证了是否是授信的第三方访问，
-    # 如果是则第三方的应用可以访问所有第三方的资源，并没有为第三方的个人用户做资源保护。所以如果第四方想访问第三方肯定会被禁止，但在第三方内用户之间的文件没有私密
-    - allow *@users read /users limit token by self
-    # slef说明充许用户只能写/protected/users目录下其用户名作为子目录的目录，不能跨目录访问
-    - allow *@users write /users limit token by self
-    - allow tenantDevelops@ucroles read / limit token
-    - allow tenantDevelops@ucroles write / limit token
-    - allow tenantDevelops@ucroles list / limit token
+    - rootDir / administrators
+    - systemDir /system  administrators|developers|tests
+    - usersDir /users
