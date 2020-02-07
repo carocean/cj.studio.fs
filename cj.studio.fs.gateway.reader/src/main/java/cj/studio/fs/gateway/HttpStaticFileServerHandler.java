@@ -163,15 +163,18 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
         String accessToken = "";
         if (config.rbacForceToken()) {
             params = Utils.parseQueryString(uri);
-            String cookieSeq = request.headers().getAndConvert(HttpHeaderNames.COOKIE);
-            Map<String, String> map = new HashMap<>();
-            if (cookieSeq != null) {
-                Set<Cookie> cookies = ServerCookieDecoder.decode(cookieSeq);
-                for (Cookie cookie : cookies) {
-                    map.put(cookie.name(), cookie.value());
+            accessToken = params.get("accessToken");
+            if(Utils.isEmpty(accessToken)) {
+                String cookieSeq = request.headers().getAndConvert(HttpHeaderNames.COOKIE);
+                Map<String, String> map = new HashMap<>();
+                if (cookieSeq != null) {
+                    Set<Cookie> cookies = ServerCookieDecoder.decode(cookieSeq);
+                    for (Cookie cookie : cookies) {
+                        map.put(cookie.name(), cookie.value());
+                    }
                 }
+                accessToken = map.get("accessToken");
             }
-            accessToken =map.get("accessToken");
 
         }
 

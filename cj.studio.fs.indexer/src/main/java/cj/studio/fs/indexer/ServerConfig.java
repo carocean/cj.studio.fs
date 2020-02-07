@@ -22,7 +22,7 @@ public class ServerConfig implements IServerConfig {
     private long uc_writeTimeout;
     private List<String> ucAddresses;
     private String rbacStrategy;
-    private List<String> rbacACL;
+    private List<Object> rbacACL;
     private boolean rbacForceToken;
     private String writerReaderServer;
     private int writerServerWorkThreadCount;
@@ -78,7 +78,7 @@ public class ServerConfig implements IServerConfig {
     }
 
     @Override
-    public List<String> rbacACL() {
+    public List<Object> rbacACL() {
         return rbacACL;
     }
 
@@ -176,7 +176,7 @@ public class ServerConfig implements IServerConfig {
 
         Map<String, Object> rbac = (Map<String, Object>) info.get("rbac");
         config.rbacStrategy = (String) rbac.get("strategy");
-        config.rbacACL = (List<String>) rbac.get("acl");
+        config.rbacACL = (List<Object>) rbac.get("acl");
         config.rbacForceToken = (boolean) rbac.get("forceToken");
         return config;
     }

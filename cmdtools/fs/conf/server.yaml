@@ -36,20 +36,41 @@ ucs:
   connectTimeout: 15000
   writeTimeout: 30000
   addresses:
-    #172.31.210.93
+    #172.31.210.93:9090
     #47.105.165.186
     - http://172.31.210.93:9090/uc/auth.service
     - http://172.31.210.93:9090/uc/auth.service
 rbac:
-  #default策略，为了简化访问控制策略，定义为：
   # /system 为系统目录只有指定的角色全权访问
-  # /users/cj 为用户个人目录（fs服务器已设定专为租户的一个应用建立服务，因此账号编号即为唯一），只有他自己具有全权
-  # 除以上目录之外的目录，任何角色都有读写删除的权限，但没有列表权限
   strategy: default
   #强制检查令牌，false表示是开放系统
   forceToken: true
-  # 所以，只需要定义系统目录即可
   acl:
-    - rootDir / administrators
-    - systemDir /system  administrators|developers|tests
-    - usersDir /users
+    - /**:
+        - read: administrators
+        - write: administrators
+        - delete: administrators
+        - list: administrators
+    - /avatars/**:
+        - read: everyone
+        - write: everyone
+        - delete: administrators
+        - list: administrators
+    - /app/**:
+        - read: everyone
+        - write: everyone
+    - /public/**:
+        - read: everyone
+        - write: everyone
+        - delete: administrators|developers|tests
+        - list: administrators|developers|tests
+    - /system/**:
+        - read: administrators|developers|tests
+        - write: administrators
+        - delete:
+        - list:  administrators|developers|tests
+    - /users/**:
+        - read: yourself
+        - write: yourself
+        - delete: yourself
+        - list: yourself

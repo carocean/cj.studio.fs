@@ -1,17 +1,21 @@
 package cj.studio.fs.indexer;
 
 import cj.studio.fs.indexer.util.Utils;
+import io.netty.handler.codec.http.QueryStringDecoder;
 
-import java.lang.reflect.Array;
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class DefaultReadAccessController implements IAccessController {
     IServiceProvider site;
     IUCPorts iucPorts;
-    Map<String, ACE> acl;
+    List<ACE> acl;
     boolean forceToken;
     String appid;
 
@@ -28,184 +32,180 @@ public class DefaultReadAccessController implements IAccessController {
             throw new RuntimeException("不是默认的策略");
         }
         forceToken = config.rbacForceToken();
-        List<String> acl = config.rbacACL();
-        this.acl = new HashMap<>();
-        for (String ace : acl) {
-            ACE one = parseACE(ace);
-            this.acl.put(one.dir, one);
+        List<?> acl = config.rbacACL();
+        this.acl = new ArrayList<>();
+        for (Object ace : acl) {
+            Map<String, Object> map = (Map<String, Object>) ace;
+            ACE ace1 = parseACE(map);
+            this.acl.add(ace1);
         }
+        System.out.println("");
     }
 
-    private ACE parseACE(String ace) {
-        String remain = ace;
-        remain = trimStart(remain);
-        int pos = remain.indexOf(" ");
-        String dirType = remain.substring(0, pos);
-        remain = remain.substring(pos + 1, remain.length());
-        remain = trimStart(remain);
-        pos = remain.indexOf(" ");
-        String dir = "";
-        List<String> roles = new ArrayList<>();
-        if (pos > -1) {
-            dir = remain.substring(0, pos);
-            remain = remain.substring(pos + 1, remain.length());
-            remain = trimStart(remain);
-            pos = remain.indexOf(" ");
-            String rolesStr = "";
-            if (pos > -1) {
-                rolesStr = remain.substring(0, pos);
-            } else {
-                rolesStr = remain;
+    private ACE parseACE(Map<String, Object> ace) {
+        ACE one = new ACE();
+        String resource = "";
+        for (String key : ace.keySet()) {
+            resource = key;
+            break;
+        }
+        String resourceRegex = resource.replace("/*/", "(\\w+)").replace("/**", "\\S*");
+        one.resourcePattern = Pattern.compile(resourceRegex);
+        List<Object> rights = (List<Object>) ace.get(resource);
+        for (Object r : rights) {
+            Map<String, Object> map = (Map<String, Object>) r;
+            String rightsName = "";
+            for (String key : map.keySet()) {
+                rightsName = key;
+                break;
             }
-            if (rolesStr != null && !"".equals(rolesStr)) {
-                String[] spRoles = rolesStr.split("\\|");
-                for (String str : spRoles) {
-                    if (str == null || "".equals(str)) {
+            List<String> roleList = new ArrayList<>();
+            String roles = (String) map.get(rightsName);
+            if (roles != null) {
+                String[] arr = roles.split("\\|");
+                for (String roleCode : arr) {
+                    if (null == roleCode || "".equals(roleCode)) {
                         continue;
                     }
-                    roles.add(String.format("app:%s@%s", str, appid));
+                    roleList.add(String.format("app:%s@%s", roleCode, appid));
                 }
             }
-        } else {
-            dir = remain;
+            Rights rights1 = new Rights();
+            rights1.roles = roleList == null ? new ArrayList<>() : roleList;
+            rights1.rights = ERights.valueOf(rightsName);
+            switch (rights1.rights) {
+                case list:
+                    one.listRights = rights1;
+                    break;
+                case read:
+                    one.readRights = rights1;
+                    break;
+                case write:
+                    one.writeRights = rights1;
+                    break;
+                case delete:
+                    one.deleteRights = rights1;
+                    break;
+            }
         }
-        ACE one = new ACE();
-        one.dir = dir;
-        one.dirType = dirType;
-        one.roles = roles;
         return one;
     }
 
-    private String trimStart(String ace) {
-        while (ace.startsWith(" ")) {
-            ace = ace.substring(1, ace.length());
-        }
-        return ace;
-    }
-
-    @Override
-    public boolean hasListRights(String path, String accessToken) {
+    private boolean _hasRight(String path, String accessToken, ERights eRights) {
         if (!forceToken) {
             return true;
         }
         if (Utils.isEmpty(accessToken)) {
             return false;
         }
+        String dir = "";
+        switch (eRights) {
+            case read:
+                dir = path;
+                break;
+            case write:
+            case list:
+            case delete:
+                QueryStringDecoder decoder = new QueryStringDecoder(path, Charset.forName("utf-8"));
+                List<String> plist = decoder.parameters().get("dir");
+                if (plist != null && !plist.isEmpty()) {
+                    dir = plist.get(0);
+                }
+                break;
+        }
         Map<String, Object> info = iucPorts.verifyToken(accessToken);
         List<String> roles = (List<String>) info.get("roles");
-        String person = (String) info.get("person");
-        String accountCode = person.substring(0, person.indexOf("@"));
-        for (String dir : acl.keySet()) {
-            if (!path.startsWith(dir)) {
-                continue;
-            }
-            ACE one = acl.get(dir);
-            switch (one.dirType) {
-                case "rootDir":
-                case "systemDir":
-                    for (String role : one.roles) {
-                        if (roles.contains(role)) {
+        for (ACE ace : acl) {
+            Matcher matcher=ace.resourcePattern.matcher(dir);
+            if (matcher.matches()) {
+                Rights rights = null;
+                switch (eRights) {
+                    case read:
+                        rights = ace.readRights;
+                        break;
+                    case write:
+                        rights = ace.writeRights;
+                        break;
+                    case list:
+                        rights = ace.listRights;
+                        break;
+                    case delete:
+                        rights = ace.deleteRights;
+                        break;
+                }
+                for (String role : rights.roles) {
+                    if (roles.contains(role) || String.format("app:everyone@%s",appid).equals(role)) {
+                        return true;
+                    }
+                    if (String.format("app:yourself@%s", appid).equals(role)) {
+                        String relpath=trimStartEquals(ace.resourcePattern.pattern(),dir);
+                        while (relpath.startsWith("/")) {
+                            relpath = relpath.substring(1, relpath.length());
+                        }
+                        int pos=relpath.indexOf("/");
+                        String accountCodeDir="";
+                        if (pos > -1) {
+                            accountCodeDir = relpath.substring(0, pos);
+                        }else{
+                            accountCodeDir=relpath;
+                        }
+                        if (String.format("%s@%s", accountCodeDir, appid).equals(info.get("person"))) {
                             return true;
                         }
                     }
-                    break;
-                case "usersDir":
-                    String prev = String.format("%s/%s", one.dir, accountCode);
-                    if (path.startsWith(prev)) {
-                        return true;
-                    }
-                    break;
+                }
             }
         }
         return false;
     }
 
-    @Override
-    public boolean hasWriteRights(String path, String accessToken) throws AccessTokenExpiredException {
-        if (!forceToken) {
-            return true;
-        }
-        if (Utils.isEmpty(accessToken)) {
-            return false;
-        }
-        Map<String, Object> info = iucPorts.verifyToken(accessToken);
-        if ((boolean) info.get("isExpired")) {
-            throw new AccessTokenExpiredException(String.format("pubTime=%s,expireTime=%s", info.get("pubTime"), info.get("expireTime")));
-        }
-        List<String> roles = (List<String>) info.get("roles");
-        String person = (String) info.get("person");
-        String accountCode = person.substring(0, person.indexOf("@"));
-
-        for (String dir : acl.keySet()) {
-            if (!path.startsWith(dir)) {
+    private String trimStartEquals(String resourcePattern, String dir) {
+        int pos=0;
+        for (int i = 0; i < dir.length(); i++) {
+            if (resourcePattern.charAt(i) == dir.charAt(i)) {
+                pos++;
                 continue;
             }
-            ACE one = acl.get(dir);
-            switch (one.dirType) {
-                case "rootDir":
-                case "systemDir":
-                    for (String role : one.roles) {
-                        if (!roles.contains(role)) {
-                            return false;
-                        }
-                    }
-                    break;
-                case "usersDir":
-                    String prev = String.format("%s/%s", one.dir, accountCode);
-                    if (!path.startsWith(prev)) {
-                        return false;
-                    }
-                    break;
-            }
+            break;
         }
-        return true;
+        return dir.substring(pos,dir.length());
+    }
+
+    @Override
+    public boolean hasListRights(String path, String accessToken) {
+        return _hasRight(path, accessToken, ERights.list);
+    }
+
+    @Override
+    public boolean hasWriteRights(String path, String accessToken) throws AccessTokenExpiredException {
+        return _hasRight(path, accessToken, ERights.write);
     }
 
     @Override
     public boolean hasReadRights(String path, String accessToken) throws AccessTokenExpiredException {
-        if (!forceToken) {
-            return true;
-        }
-        if (Utils.isEmpty(accessToken)) {
-            return false;
-        }
-        Map<String, Object> info = iucPorts.verifyToken(accessToken);
-        if ((boolean) info.get("isExpired")) {
-            throw new AccessTokenExpiredException(String.format("pubTime=%s,expireTime=%s", info.get("pubTime"), info.get("expireTime")));
-        }
-        List<String> roles = (List<String>) info.get("roles");
-        String person = (String) info.get("person");
-        String accountCode = person.substring(0, person.indexOf("@"));
-        for (String dir : acl.keySet()) {
-            if (!path.startsWith(dir)) {
-                continue;
-            }
-            ACE one = acl.get(dir);
-            switch (one.dirType) {
-                case "rootDir":
-                case "systemDir":
-                    for (String role : one.roles) {
-                        if (!roles.contains(role)) {
-                            return false;
-                        }
-                    }
-                    break;
-                case "usersDir":
-                    String prev = String.format("%s/%s", one.dir, accountCode);
-                    if (!path.startsWith(prev)) {
-                        return false;
-                    }
-                    break;
-            }
-        }
-        return true;
+        return _hasRight(path, accessToken, ERights.read);
     }
 
 
 }
 
 class ACE {
-    String dirType;
-    String dir;
+    Pattern resourcePattern;
+    Rights readRights;
+    Rights deleteRights;
+    Rights writeRights;
+    Rights listRights;
+}
+
+class Rights {
+    ERights rights;
     List<String> roles;
+
+}
+
+enum ERights {
+    read,
+    write,
+    delete,
+    list,
 }

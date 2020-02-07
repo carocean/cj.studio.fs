@@ -1,6 +1,5 @@
 package cj.studio.fs.indexer;
 
-import java.time.Duration;
 import java.util.List;
 
 public interface IServerConfig {
@@ -40,7 +39,7 @@ public interface IServerConfig {
 
     String rbacStrategy();
 
-    List<String> rbacACL();
+    List<Object> rbacACL();
 
     String writerServerIP();
 
