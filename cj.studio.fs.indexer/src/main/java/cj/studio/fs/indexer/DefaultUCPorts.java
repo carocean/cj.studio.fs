@@ -44,11 +44,10 @@ public class DefaultUCPorts implements IUCPorts {
         Request request = new Request.Builder()
                 .url(url)
                 .addHeader("Rest-Command", "verification")
-                .addHeader("Rest-Command", "auth")
-                .addHeader("App-Id", appid)
-                .addHeader("App-Key", appKey)
-                .addHeader("App-Nonce", nonce)
-                .addHeader("App-Sign", sign)
+                .addHeader("app-id", appid)
+                .addHeader("app-key", appKey)
+                .addHeader("app-nonce", nonce)
+                .addHeader("app-sign", sign)
                 .build();
         Call call = client.newCall(request);
         try {
@@ -75,10 +74,10 @@ public class DefaultUCPorts implements IUCPorts {
         Request request = new Request.Builder()
                 .url(url)
                 .addHeader("Rest-Command", "auth")
-                .addHeader("App-Id", appid)
-                .addHeader("App-Key", appKey)
-                .addHeader("App-Nonce", nonce)
-                .addHeader("App-Sign", sign)
+                .addHeader("app-id", appid)
+                .addHeader("app-key", appKey)
+                .addHeader("app-nonce", nonce)
+                .addHeader("app-sign", sign)
                 .build();
         Call call = client.newCall(request);
         try {
