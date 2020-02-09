@@ -209,18 +209,18 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
             return;
         }
 //        // Cache Validation
-        String ifModifiedSince = request.headers().getAndConvert(IF_MODIFIED_SINCE);
-        if (ifModifiedSince != null && !ifModifiedSince.isEmpty()) {
-            SimpleDateFormat dateFormatter = new SimpleDateFormat(HTTP_DATE_FORMAT, Locale.US);
-            Date ifModifiedSinceDate = dateFormatter.parse(ifModifiedSince);
-
-            long ifModifiedSinceDateSeconds = ifModifiedSinceDate.getTime() / 1000;
-            long fileLastModifiedSeconds = fileSystem.lastModified(path) / 1000;
-            if (ifModifiedSinceDateSeconds == fileLastModifiedSeconds) {
-                sendNotModified(ctx);
-                return;
-            }
-        }
+//        String ifModifiedSince = request.headers().getAndConvert(IF_MODIFIED_SINCE);
+//        if (ifModifiedSince != null && !ifModifiedSince.isEmpty()) {
+//            SimpleDateFormat dateFormatter = new SimpleDateFormat(HTTP_DATE_FORMAT, Locale.US);
+//            Date ifModifiedSinceDate = dateFormatter.parse(ifModifiedSince);
+//
+//            long ifModifiedSinceDateSeconds = ifModifiedSinceDate.getTime() / 1000;
+//            long fileLastModifiedSeconds = fileSystem.lastModified(path) / 1000;
+//            if (ifModifiedSinceDateSeconds == fileLastModifiedSeconds) {
+//                sendNotModified(ctx);
+//                return;
+//            }
+//        }
 
         long fileLength = 0;
         try {
