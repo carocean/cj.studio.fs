@@ -13,22 +13,11 @@ class FileReader implements IFileReader {
     RandomAccessFile file;
 
     public FileReader(IServiceProvider site, String file) throws FileNotFoundException {
-        DB db = (DB) site.getService("$.db");
-        String parentDir = Utils.getParentDir(file);
-        Map<String, FileInfo> dir = null;
-        if (!db.getCollections().containsKey(parentDir)) {
-            throw new RuntimeException("文件不存在：" + file);
+        File f = new File(file);
+        if (!f.exists()) {
+            throw new FileNotFoundException("文件不存在：" + file);
         }
-        dir = db.getTreeMap(parentDir);
-
-        String fn = Utils.getFileName(file);
-        if (!dir.containsKey(fn)) {
-            throw new RuntimeException("文件不存在：" + file);
-        }
-        FileInfo fileInfo = dir.get(fn);
-        File dataDir = (File) site.getService("$.dataDir");
-        String realFile = String.format("%s%s%s", dataDir.getAbsoluteFile(), File.separator, fileInfo.fileName);
-        this.file = new RandomAccessFile(realFile, "r");
+        this.file = new RandomAccessFile(f, "r");
     }
 
     @Override
@@ -38,17 +27,19 @@ class FileReader implements IFileReader {
 
     @Override
     public void readFully(byte[] array, int pos, int chunkSize) throws IOException {
-        file.readFully(array,pos,chunkSize);
+        file.readFully(array, pos, chunkSize);
     }
 
     @Override
     public int read(byte[] buf) throws IOException {
         return file.read(buf);
     }
+
     @Override
     public void seek(long pos) throws IOException {
         file.seek(pos);
     }
+
     @Override
     public int read(byte[] buf, int pos, int length) throws IOException {
         return file.read(buf, pos, length);

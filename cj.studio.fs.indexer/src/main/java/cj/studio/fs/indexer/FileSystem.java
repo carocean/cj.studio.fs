@@ -1,19 +1,13 @@
 package cj.studio.fs.indexer;
 
-import cj.studio.fs.indexer.util.Utils;
-import org.apache.commons.cli.Options;
-import org.apache.jdbm.DB;
-import org.apache.jdbm.DBMaker;
-
-import java.io.File;
-import java.io.FileNotFoundException;
-import java.util.*;
+import java.io.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 
 public class FileSystem implements IDirectory {
     IServiceProvider site;
-    File indexDir;
-    File dataDir;
-    DB db;
+    File homeDir;
 
     public FileSystem(String homeDir) {
         File homeFile = new File(homeDir);
@@ -24,41 +18,28 @@ public class FileSystem implements IDirectory {
             throw new RuntimeException("索引存储位置必须是目录");
         }
         site = new DefaultSite();
-        this.indexDir = new File(String.format("%s%sindex", homeDir, File.separator));
-        this.dataDir = new File(String.format("%s%sdata", homeDir, File.separator));
-        if (!dataDir.exists()) {
-            dataDir.mkdirs();
-        }
-        if (!this.dataDir.isDirectory()) {
-            throw new RuntimeException("数据存储位置必须是目录");
-        }
-
-        this.db = DBMaker.openFile(this.indexDir.getAbsolutePath())
-//                .deleteFilesAfterClose()
-//                .enableEncryption("password", false)
-                .disableLocking()
-                .disableTransactions()
-                .disableCache()
-                .disableCacheAutoClear()
-                .useRandomAccessFile()
-                .make();
-        if (!db.getCollections().containsKey("/")) {
-            Utils.mkdirs(db, "/");
-        }
+        this.homeDir = homeFile;
     }
 
     @Override
     public void mkdirs(String dir) {
-        Utils.mkdirs(db, dir);
+        String path = String.format("%s%s%s", homeDir.getAbsolutePath(), File.separator, dir);
+        File _dir = new File(path);
+        if (_dir.exists()) {
+            return;
+        }
+        _dir.mkdirs();
     }
 
-    public IFileWriter openWriter(String file) throws FileNotFoundException {
-        IFileWriter writer = new FileWriter(this.site, file);
+    public IFileWriter openWriter(String file) throws IOException {
+        String _file = String.format("%s%s%s", homeDir.getAbsolutePath(), File.separator, file);
+        IFileWriter writer = new FileWriter(this.site, _file);
         return writer;
     }
 
     public IFileReader openReader(String file) throws FileNotFoundException {
-        IFileReader reader = new FileReader(this.site, file);
+        String _file = String.format("%s%s%s", homeDir.getAbsolutePath(), File.separator, file);
+        IFileReader reader = new FileReader(this.site, _file);
         return reader;
     }
 
@@ -72,16 +53,29 @@ public class FileSystem implements IDirectory {
                 parent = parent.substring(0, parent.length() - 1);
             }
         }
-        Map<String, FileInfo> dir = db.getTreeMap(parent);
-        List<String> list = new ArrayList<>();
-        if (dir == null) return list;
-        for (String key : dir.keySet()) {
-            FileInfo info = dir.get(key);
-            if (info.type == FileType.dir) {
-                list.add(String.format("%s%s", parent.endsWith("/") ? parent : String.format("%s/", parent), info.fileName));
-            }
+        String parentDir = String.format("%s%s%s", homeDir.getAbsolutePath(), File.separator, parent);
+        File file = new File((parentDir));
+        if (!file.exists()) {
+            return new ArrayList<>();
         }
-        return list;
+        File[] dirNames = file.listFiles(new FileFilter() {
+            @Override
+            public boolean accept(File pathname) {
+                return pathname.isDirectory() && !pathname.isHidden();
+            }
+        });
+        if (dirNames == null) {
+            return new ArrayList<>();
+        }
+        if (!parent.endsWith(File.separator)) {
+            parent = String.format("%s%s", parent, File.separator);
+        }
+        List<String> _dirs = new ArrayList<>();
+        for (File dir : dirNames) {
+            String reldir = String.format("%s%s", parent, dir.getName());
+            _dirs.add(reldir);
+        }
+        return _dirs;
     }
 
     @Override
@@ -94,131 +88,101 @@ public class FileSystem implements IDirectory {
                 parent = parent.substring(0, parent.length() - 1);
             }
         }
-        Map<String, FileInfo> dir = db.getTreeMap(parent);
-        if (dir == null) {
+        String parentDir = String.format("%s%s%s", homeDir.getAbsolutePath(), File.separator, parent);
+        File file = new File((parentDir));
+        if (!file.exists()) {
             return new ArrayList<>();
         }
-        Set<String> set = dir.keySet();
-        List<String> list = new ArrayList<>();
-        for (String key : set) {
-            FileInfo info = dir.get(key);
-            if (info.type == FileType.file) {
-                list.add(String.format("%s%s", parent.endsWith("/") ? parent : String.format("%s/", parent), key));
+        File[] fileNames = file.listFiles(new FileFilter() {
+            @Override
+            public boolean accept(File pathname) {
+                return pathname.isFile() && !pathname.isHidden();
             }
+        });
+        if (fileNames == null) {
+            return new ArrayList<>();
         }
-        return list;
+        if (!parent.endsWith(File.separator)) {
+            parent = String.format("%s%s", parent, File.separator);
+        }
+        List<String> _files = new ArrayList<>();
+        for (File dir : fileNames) {
+            String reldir = String.format("%s%s", parent, dir.getName());
+            _files.add(reldir);
+        }
+        return _files;
     }
 
     @Override
     public boolean existsDir(String dir) {
-        if ("".equals(dir)) {
-            return db.getCollections().containsKey("");
-        }
-        if (!"/".equals(dir)) {
-            while (dir.endsWith("/")) {
-                dir = dir.substring(0, dir.length() - 1);
-            }
-        }
-        return this.db.getCollections().containsKey(dir);
+        String parentDir = String.format("%s%s%s", homeDir.getAbsolutePath(), File.separator, dir);
+        File file = new File((parentDir));
+        return file.exists();
     }
 
     @Override
     public void deleteDir(String dir) {//删除所有子目录及文件，包括当前目录
-        Map<String, FileInfo> map = db.getTreeMap(dir);
         List<String> files = listFile(dir);
         for (String file : files) {
-            String fn = Utils.getFileName(file);
-            FileInfo info = map.get(fn);
-            String realFile = String.format("%s%s%s", dataDir.getAbsoluteFile(), File.separator, info.fileName);
+            String realFile = String.format("%s%s%s", homeDir.getAbsolutePath(), File.separator, file);
             File f = new File(realFile);
-            f.delete();
-            map.remove(fn);
+            if (f.exists())
+                f.delete();
         }
         List<String> childs = listDir(dir);
         for (String child : childs) {
             deleteDir(child);
         }
-        if (db.getCollections().containsKey(dir) && !"".equals(dir) && !"/".equals(dir)) {
-            db.deleteCollection(dir);
-        }
-        String parent = Utils.getParentDir(dir);
-        Map<String, FileInfo> parentMap = db.getTreeMap(parent);
-        if (parentMap != null) {
-            String folder = Utils.getFolder(dir);
-            parentMap.remove(folder);
-        }
-        db.commit();
+
     }
 
     @Override
     public void deleteFile(String file) {
-        String parent = Utils.getParentDir(file);
-        if (!db.getCollections().containsKey(parent)) {
-            throw new RuntimeException("父路径不存在");
-        }
-        Map<String, FileInfo> map = db.getTreeMap(parent);
-        String fn = Utils.getFileName(file);
-        FileInfo info = map.get(fn);
-        String realFile = String.format("%s%s%s", dataDir.getAbsoluteFile(), File.separator, info.fileName);
+        String realFile = String.format("%s%s%s", homeDir.getAbsolutePath(), File.separator, file);
         File f = new File(realFile);
-        f.delete();
-        map.remove(fn);
-        db.commit();
+        if (f.exists()) {
+            f.delete();
+        }
     }
 
     @Override
     public String parentDir(String dir) {
-        String parent = Utils.getParentDir(dir);
-        if (!this.db.getCollections().containsKey(parent)) {
-            throw new RuntimeException("父路径不存在");
+        String realFile = String.format("%s%s%s", homeDir.getAbsolutePath(), File.separator, dir);
+        File f = new File(realFile);
+        if (f.equals(homeDir)) {
+            return "/";
         }
-        return Utils.getParentDir(dir);
+        return f.getParent();
     }
 
     public void close() {
-        db.close();
+        this.homeDir = null;
     }
 
     @Override
     public boolean isDirectory(String path) {
-        int pos = path.indexOf("?");
-        if (pos > -1) {
-            path = path.substring(0, pos);
-        }
-        if ("/".equals(path) || "".equals(path)) {
-            return true;
-        }
-        while (path.endsWith("/")) {
-            path = path.substring(0, path.length() - 1);
-        }
-        return db.getCollections().containsKey(path);
+        String realFile = String.format("%s%s%s", homeDir.getAbsolutePath(), File.separator, path);
+        File f = new File(realFile);
+        return f.isDirectory();
     }
 
     @Override
     public boolean isFile(String path) {
-        String parentDir = Utils.getParentDir(path);
-        Map<String, FileInfo> dir = null;
-        if (!db.getCollections().containsKey(parentDir)) {
-            return false;
-        }
-        dir = db.getTreeMap(parentDir);
-
-        String fn = Utils.getFileName(path);
-        if (!dir.containsKey(fn)) {
-            return false;
-        }
-        return true;
+        String realFile = String.format("%s%s%s", homeDir.getAbsolutePath(), File.separator, path);
+        File f = new File(realFile);
+        return f.isFile();
     }
 
     public long lastModified(String file) {
-        String parent = Utils.getParentDir(file);
-        if (!db.getCollections().containsKey(parent)) {
-            throw new RuntimeException("父路径不存在");
-        }
-        Map<String, FileInfo> map = db.getTreeMap(parent);
-        String fn = Utils.getFileName(file);
-        FileInfo info = map.get(fn);
-        return info.getLastModified();
+        String realFile = String.format("%s%s%s", homeDir.getAbsolutePath(), File.separator, file);
+        File f = new File(realFile);
+        return f.lastModified();
+    }
+
+    public File getRealFile(String path) {
+        String realFile = String.format("%s%s%s", homeDir.getAbsolutePath(), File.separator, path);
+        File f = new File(realFile);
+        return  f;
     }
 
     class DefaultSite implements IServiceProvider {
@@ -226,12 +190,6 @@ public class FileSystem implements IDirectory {
 
         @Override
         public Object getService(String name) {
-            if ("$.db".equals(name)) {
-                return db;
-            }
-            if ("$.dataDir".equals(name)) {
-                return dataDir;
-            }
             return null;
         }
     }

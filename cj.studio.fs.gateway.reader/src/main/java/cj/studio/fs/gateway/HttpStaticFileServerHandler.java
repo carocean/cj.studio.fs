@@ -18,24 +18,24 @@ package cj.studio.fs.gateway;
 import cj.studio.fs.indexer.*;
 import cj.studio.fs.indexer.util.Utils;
 import com.google.gson.Gson;
-import io.netty.buffer.ByteBuf;
 import io.netty.buffer.Unpooled;
-import io.netty.channel.ChannelFuture;
-import io.netty.channel.ChannelFutureListener;
-import io.netty.channel.ChannelHandlerContext;
-import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.*;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.stream.ChunkedFile;
 import io.netty.util.CharsetUtil;
 import org.apache.log4j.Logger;
 
 import javax.activation.MimetypesFileTypeMap;
-import java.io.IOException;
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.RandomAccessFile;
 import java.net.URLDecoder;
-import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
 import static io.netty.handler.codec.http.HttpHeaderNames.*;
+import static io.netty.handler.codec.http.HttpHeaderUtil.isKeepAlive;
+import static io.netty.handler.codec.http.HttpHeaderUtil.setContentLength;
 import static io.netty.handler.codec.http.HttpMethod.GET;
 import static io.netty.handler.codec.http.HttpResponseStatus.*;
 import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
@@ -86,7 +86,7 @@ import static io.netty.handler.codec.http.HttpVersion.HTTP_1_1;
  *
  * </pre>
  */
-public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<HttpObject> {
+public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<FullHttpRequest> {
     private static final Logger logger = Logger.getLogger(HttpStaticFileServerHandler.class.getName());
     public static final String HTTP_DATE_FORMAT = "EEE, dd MMM yyyy HH:mm:ss zzz";
     public static final String HTTP_DATE_GMT_TIMEZONE = "GMT";
@@ -94,7 +94,6 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
     FileSystem fileSystem;
     IServerConfig config;
     IAccessController controller;
-    IFileReader reader = null;
     HttpRequest request;
 
 
@@ -110,38 +109,7 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
     }
 
     @Override
-    public void messageReceived(ChannelHandlerContext ctx, HttpObject obj) throws Exception {
-        if (obj instanceof HttpRequest) {
-            this.request=(HttpRequest)obj;
-            doHttpRequest(ctx, request);
-            return;
-        }
-        if (obj instanceof LastHttpContent) {
-            ChannelFuture lastContentFuture;
-            if(reader!=null) {
-                byte[] buf = new byte[config.chunkedSize()];
-                int readlen = 0;
-                while (true) {
-                    readlen = reader.read(buf, 0, buf.length);
-                    if (readlen < 0) {
-                        break;
-                    }
-                    ByteBuf bb = ctx.alloc().buffer(readlen);
-                    bb.writeBytes(buf, 0, readlen);
-                    HttpContent content = new DefaultHttpContent(bb);
-                    ctx.writeAndFlush(content);
-                }
-            }
-            lastContentFuture = ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
-            if (!HttpHeaderUtil.isKeepAlive(request)) {
-                lastContentFuture.addListener(ChannelFutureListener.CLOSE);
-            }
-            this.request=null;
-        }
-
-    }
-
-    private void doHttpRequest(ChannelHandlerContext ctx, HttpRequest request) throws IOException, ParseException {
+    public void messageReceived(ChannelHandlerContext ctx, FullHttpRequest request) throws Exception {
         if (!request.decoderResult().isSuccess()) {
             sendError(ctx, BAD_REQUEST);
             return;
@@ -159,12 +127,13 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
             sendError(ctx, FORBIDDEN);
             return;
         }
+
         Map<String, String> params = null;
         String accessToken = "";
         if (config.rbacForceToken()) {
             params = Utils.parseQueryString(uri);
             accessToken = params.get("accessToken");
-            if(Utils.isEmpty(accessToken)) {
+            if (Utils.isEmpty(accessToken)) {
                 String cookieSeq = request.headers().getAndConvert(HttpHeaderNames.COOKIE);
                 Map<String, String> map = new HashMap<>();
                 if (cookieSeq != null) {
@@ -177,11 +146,12 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
             }
 
         }
+        File file=fileSystem.getRealFile(path);
 
-        if (!fileSystem.isFile(path)) {
+        if (file.isDirectory()) {
             String list = params == null ? null : params.get("list");
-            if("/".equals(path)&&!Utils.isEmpty(list)){
-                listDir(ctx, list,accessToken);
+            if ("/".equals(path) && !Utils.isEmpty(list)) {
+                listDir(ctx, list, accessToken);
                 return;
             }
             sendError(ctx, FORBIDDEN);
@@ -201,72 +171,95 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Htt
             sendError(ctx, EXPECTATION_FAILED);
         }
 
+        // Cache Validation
+        String ifModifiedSince = request.headers().getAndConvert(IF_MODIFIED_SINCE);
+        if (ifModifiedSince != null && !ifModifiedSince.isEmpty()) {
+            SimpleDateFormat dateFormatter = new SimpleDateFormat(HTTP_DATE_FORMAT, Locale.US);
+            Date ifModifiedSinceDate = dateFormatter.parse(ifModifiedSince);
+
+            long ifModifiedSinceDateSeconds = ifModifiedSinceDate.getTime() / 1000;
+            long fileLastModifiedSeconds = fileSystem.lastModified(path) / 1000;
+            if (ifModifiedSinceDateSeconds == fileLastModifiedSeconds) {
+                sendNotModified(ctx);
+                return;
+            }
+        }
+
+        RandomAccessFile raf;
         try {
-            reader = fileSystem.openReader(path);
-        } catch (Exception e) {
-            logger.error(e);
+            raf = new RandomAccessFile(file, "r");
+        } catch (FileNotFoundException fnfe) {
             sendError(ctx, NOT_FOUND);
             return;
         }
-//        // Cache Validation
-//        String ifModifiedSince = request.headers().getAndConvert(IF_MODIFIED_SINCE);
-//        if (ifModifiedSince != null && !ifModifiedSince.isEmpty()) {
-//            SimpleDateFormat dateFormatter = new SimpleDateFormat(HTTP_DATE_FORMAT, Locale.US);
-//            Date ifModifiedSinceDate = dateFormatter.parse(ifModifiedSince);
-//
-//            long ifModifiedSinceDateSeconds = ifModifiedSinceDate.getTime() / 1000;
-//            long fileLastModifiedSeconds = fileSystem.lastModified(path) / 1000;
-//            if (ifModifiedSinceDateSeconds == fileLastModifiedSeconds) {
-//                sendNotModified(ctx);
-//                return;
-//            }
-//        }
+        long fileLength = raf.length();
 
-        long fileLength = 0;
-        try {
-            fileLength = reader.length();
-        } catch (Exception e) {
-            logger.error(e);
-            HttpResponseStatus status = HttpResponseStatus.parseLine("500 Fail to fetch file length.");
-            sendError(ctx, status);
-            return;
-        }
         HttpResponse response = new DefaultHttpResponse(HTTP_1_1, OK);
-        HttpHeaderUtil.setContentLength(response, fileLength);
-        setContentTypeHeader(response, Utils.getFileName(path));
+        setContentLength(response, fileLength);
+        setContentTypeHeader(response, path);
         setDateAndCacheHeaders(response, path);
-        if (HttpHeaderUtil.isKeepAlive(request)) {
-            response.headers().set(CONNECTION, HttpHeaderValues.KEEP_ALIVE);
+        if (isKeepAlive(request)) {
+            response.headers().set(CONNECTION, KEEP_ALIVE);
         }
-        ctx.writeAndFlush(response);
 
+        // Write the initial line and the header.
+        ctx.write(response);
+
+        // Write the content.
+        ChannelFuture sendFileFuture =
+                ctx.write(new ChunkedFile(raf, 0, fileLength, 8192), ctx.newProgressivePromise());
+
+        sendFileFuture.addListener(new ChannelProgressiveFutureListener() {
+            @Override
+            public void operationProgressed(ChannelProgressiveFuture future, long progress, long total) {
+                if (total < 0) { // total unknown
+                    System.err.println("Transfer progress: " + progress);
+                } else {
+                    System.err.println("Transfer progress: " + progress + " / " + total);
+                }
+            }
+
+            @Override
+            public void operationComplete(ChannelProgressiveFuture future) throws Exception {
+                System.err.println("Transfer complete.");
+            }
+        });
+
+        // Write the end marker
+        ChannelFuture lastContentFuture = ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
+
+        // Decide whether to close the connection or not.
+        if (!isKeepAlive(request)) {
+            // Close the connection when the whole content is written out.
+            lastContentFuture.addListener(ChannelFutureListener.CLOSE);
+        }
 
     }
 
-    private void listDir(ChannelHandlerContext ctx, String path,String accessToken) {
+    private void listDir(ChannelHandlerContext ctx, String path, String accessToken) {
         if (!fileSystem.existsDir(path)) {
             sendError(ctx, NOT_FOUND);
             return;
         }
-        if(config.rbacForceToken()&&!controller.hasListRights(path,accessToken)){
+        if (config.rbacForceToken() && !controller.hasListRights(path, accessToken)) {
             sendError(ctx, FORBIDDEN);
             return;
         }
 
         Map<String, String> data = new HashMap<>();
-        List<String> dirs=fileSystem.listDir(path);
-        List<String> files=fileSystem.listFile(path);
+        List<String> dirs = fileSystem.listDir(path);
+        List<String> files = fileSystem.listFile(path);
         for (String d : dirs) {
             data.put(d, "d");
         }
         for (String f : files) {
             data.put(f, "f");
         }
-        ResponseClient rc = new ResponseClient(200,"ok",new Gson().toJson(data));
-        IPageContext context= new DefaultPageContext(fileSystem,ctx,request,null);
+        ResponseClient rc = new ResponseClient(200, "ok", new Gson().toJson(data));
+        IPageContext context = new DefaultPageContext(fileSystem, ctx, request, null);
         StringBuilder builder = new StringBuilder();
         builder.append(new Gson().toJson(rc));
-        context.writeResponse(ctx.channel(),builder);
+        context.writeResponse(ctx.channel(), builder);
         context.dispose();
     }
 
