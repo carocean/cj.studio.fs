@@ -3,8 +3,6 @@ package cj.studio.fs.indexer;
 import cj.studio.fs.indexer.util.Utils;
 import io.netty.handler.codec.http.QueryStringDecoder;
 
-import java.io.UnsupportedEncodingException;
-import java.net.URLDecoder;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,12 +16,16 @@ public class DefaultReadAccessController implements IAccessController {
     List<ACE> acl;
     boolean forceToken;
     String appid;
+    String appKey;
+    String appSecret;
 
     public DefaultReadAccessController(IServiceProvider site) {
         this.site = site;
         iucPorts = (IUCPorts) site.getService("$.uc.ports");
         IServerConfig config = (IServerConfig) site.getService("$.config");
         appid = config.appid();
+        appSecret = config.appSecret();
+        appKey=config.appKey();
         loadRBAC(config);
     }
 
@@ -91,12 +93,18 @@ public class DefaultReadAccessController implements IAccessController {
         return one;
     }
 
-    private boolean _hasRight(String path, String accessToken, ERights eRights) {
+    private boolean _hasRight(String path, String accessToken,String nonce, ERights eRights) {
         if (!forceToken) {
             return true;
         }
         if (Utils.isEmpty(accessToken)) {
             return false;
+        }
+        if (!Utils.isEmpty(nonce)) {
+            String token=String.format("%s%s%s",appKey,appSecret,nonce);
+            if (accessToken.equals(token)) {
+                return true;
+            }
         }
         String dir = "";
         switch (eRights) {
@@ -173,17 +181,17 @@ public class DefaultReadAccessController implements IAccessController {
 
     @Override
     public boolean hasListRights(String path, String accessToken) {
-        return _hasRight(path, accessToken, ERights.list);
+        return _hasRight(path, accessToken,null, ERights.list);
     }
 
     @Override
     public boolean hasWriteRights(String path, String accessToken) throws AccessTokenExpiredException {
-        return _hasRight(path, accessToken, ERights.write);
+        return _hasRight(path, accessToken,null, ERights.write);
     }
 
     @Override
-    public boolean hasReadRights(String path, String accessToken) throws AccessTokenExpiredException {
-        return _hasRight(path, accessToken, ERights.read);
+    public boolean hasReadRights(String path, String accessToken,String nonce) throws AccessTokenExpiredException {
+        return _hasRight(path, accessToken,nonce, ERights.read);
     }
 
 

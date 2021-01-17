@@ -130,9 +130,11 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
 
         Map<String, String> params = null;
         String accessToken = "";
+        String nonce="";
         if (config.rbacForceToken()) {
             params = Utils.parseQueryString(uri);
             accessToken = params.get("accessToken");
+            nonce=params.get("nonce");
             if (Utils.isEmpty(accessToken)) {
                 String cookieSeq = request.headers().getAndConvert(HttpHeaderNames.COOKIE);
                 Map<String, String> map = new HashMap<>();
@@ -158,7 +160,7 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
             return;
         }
         try {
-            if (config.rbacForceToken() && !controller.hasReadRights(uri, accessToken)) {
+            if (config.rbacForceToken() && !controller.hasReadRights(uri, accessToken,nonce)) {
                 sendError(ctx, FORBIDDEN);
                 return;
             }
