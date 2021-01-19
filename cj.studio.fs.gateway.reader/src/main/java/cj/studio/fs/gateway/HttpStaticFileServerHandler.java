@@ -21,6 +21,7 @@ import com.google.gson.Gson;
 import io.netty.buffer.Unpooled;
 import io.netty.channel.*;
 import io.netty.handler.codec.http.*;
+import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.stream.ChunkedFile;
 import io.netty.util.CharsetUtil;
 import org.apache.log4j.Logger;
@@ -197,19 +198,53 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
         long fileLength = raf.length();
 
         HttpResponse response = new DefaultHttpResponse(HTTP_1_1, OK);
-        setContentLength(response, fileLength);
+//        setContentLength(response, fileLength);
         setContentTypeHeader(response, path);
         setDateAndCacheHeaders(response, path);
         if (isKeepAlive(request)) {
-            response.headers().set(CONNECTION, KEEP_ALIVE);
+            response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.KEEP_ALIVE);
+        }else{
+            response.headers().set(HttpHeaderNames.CONNECTION, HttpHeaderValues.CLOSE);
         }
+
+        // 分片下载 start .... by jay100
+        // 告诉客户端支持分片下载，如迅雷下载器
+        response.headers().set(HttpHeaderNames.ACCEPT_RANGES, HttpHeaderValues.BYTES);
+        long startOffset = 0;
+        long endOffset = fileLength-1;
+        long endLength = fileLength;
+        String range = request.headers().getAndConvert(HttpHeaderNames.RANGE);
+        if(range!=null){ //分片下载
+            response.setStatus(PARTIAL_CONTENT);
+            String[] r = range.replace("bytes=","").split("-");
+            startOffset = Long.parseLong(r[0]);
+            if(r.length==2) endOffset =  Long.parseLong(r[1]);
+            response.headers().set(HttpHeaderNames.CONTENT_RANGE, HttpHeaderValues.BYTES+" "+startOffset+"-"+endOffset+"/"+fileLength);
+            System.out.println("range:"+startOffset+" - "+ endOffset);
+            endLength = endOffset-startOffset+1;
+        }
+
+        setContentLength(response, endLength);
+        // 分片下载 end .... by jay100
 
         // Write the initial line and the header.
         ctx.write(response);
 
         // Write the content.
-        ChannelFuture sendFileFuture =
-                ctx.write(new ChunkedFile(raf, 0, fileLength, 8192), ctx.newProgressivePromise());
+        ChannelFuture sendFileFuture;
+        ChannelFuture lastContentFuture;
+        if (ctx.pipeline().get(SslHandler.class) == null) {
+            sendFileFuture =
+                    ctx.writeAndFlush(new DefaultFileRegion(raf.getChannel(), startOffset, endLength), ctx.newProgressivePromise());
+            // Write the end marker.
+            lastContentFuture = ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
+        } else {
+            sendFileFuture =
+                    ctx.writeAndFlush(new HttpChunkedInput(new ChunkedFile(raf, startOffset, endLength, 8192)),
+                            ctx.newProgressivePromise());
+            // HttpChunkedInput will write the end marker (LastHttpContent) for us.
+            lastContentFuture = sendFileFuture;
+        }
 
         sendFileFuture.addListener(new ChannelProgressiveFutureListener() {
             @Override
@@ -227,8 +262,8 @@ public class HttpStaticFileServerHandler extends SimpleChannelInboundHandler<Ful
             }
         });
 
-        // Write the end marker
-        ChannelFuture lastContentFuture = ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
+//        // Write the end marker
+//        ChannelFuture lastContentFuture = ctx.writeAndFlush(LastHttpContent.EMPTY_LAST_CONTENT);
 
         // Decide whether to close the connection or not.
         if (!isKeepAlive(request)) {
